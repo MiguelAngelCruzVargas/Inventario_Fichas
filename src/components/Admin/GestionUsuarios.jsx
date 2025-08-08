@@ -193,12 +193,14 @@ const DeleteConfirmationModal = ({ modalConfig, onConfirm, onClose, loading }) =
                             Advertencias importantes:
                         </h4>
                         <ul className="text-sm text-yellow-700 space-y-1">
-                            {warnings.map((warning, index) => (
-                                <li key={index} className="flex items-start">
+                            {warnings.map((warning) => {
+                                const key = `warn-${Math.abs((warning||'').split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0),0))}`;
+                                return (
+                                <li key={key} className="flex items-start">
                                     <span className="mr-2">•</span>
                                     {warning}
                                 </li>
-                            ))}
+                            )})}
                         </ul>
                     </div>
                 )}
@@ -211,12 +213,14 @@ const DeleteConfirmationModal = ({ modalConfig, onConfirm, onClose, loading }) =
                             Recomendaciones:
                         </h4>
                         <ul className="text-sm text-blue-700 space-y-1">
-                            {recommendations.map((recommendation, index) => (
-                                <li key={index} className="flex items-start">
+                            {recommendations.map((recommendation) => {
+                                const key = `rec-${Math.abs((recommendation||'').split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0),0))}`;
+                                return (
+                                <li key={key} className="flex items-start">
                                     <span className="mr-2">💡</span>
                                     {recommendation}
                                 </li>
-                            ))}
+                            )})}
                         </ul>
                     </div>
                 )}

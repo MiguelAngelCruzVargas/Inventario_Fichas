@@ -317,8 +317,10 @@ const Dashboard = () => {
                   slate: 'text-slate-500'
                 };
                 
+                // Generar una clave estable combinando tipo + color + hash del mensaje para evitar duplicados
+                const key = `${alerta.tipo}-${alerta.color}-${Math.abs((alerta.mensaje||'').split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0),0))}`;
                 return (
-                  <div key={index} className={`flex items-center p-3 sm:p-4 rounded-lg sm:rounded-xl border ${colorClasses[alerta.color]}`}>
+                  <div key={key} className={`flex items-center p-3 sm:p-4 rounded-lg sm:rounded-xl border ${colorClasses[alerta.color]}`}>
                     <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-white flex items-center justify-center mr-3 sm:mr-4 flex-shrink-0">
                       <IconoAlerta className={`w-3 h-3 sm:w-4 sm:h-4 ${iconColorClasses[alerta.color]}`} />
                     </div>
