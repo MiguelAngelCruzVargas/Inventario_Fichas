@@ -26,6 +26,7 @@ const LoginForm = ({ onLogin }) => {
   });
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [rolDetectado, setRolDetectado] = useState(null);
+  const [rolConfirmado, setRolConfirmado] = useState(false); // true solo si backend lo confirma
 
   // Debug: Log cuando cambia el rolDetectado
   useEffect(() => {
@@ -64,12 +65,13 @@ const LoginForm = ({ onLogin }) => {
   // Detectar rol basado en el usuario ingresado
   useEffect(() => {
     // Evitar detecciones cuando ya está autenticado para no disparar efectos innecesarios
-    if (isAuthenticated) return;
+  if (isAuthenticated) return;
 
     const detectRole = async () => {
       const username = credentials.username.trim();
       if (!username) {
         setRolDetectado(null);
+        setRolConfirmado(false);
         return;
       }
 
@@ -77,12 +79,11 @@ const LoginForm = ({ onLogin }) => {
       const usernameLower = username.toLowerCase();
       if (usernameLower === 'admin') {
         setRolDetectado('admin');
-        return;
-      } else if (usernameLower === 'maria') {
-        setRolDetectado('revendedor');
+        setRolConfirmado(false); // heurístico hasta confirmar
         return;
       } else if (usernameLower === 'prueba') {
         setRolDetectado('trabajador');
+        setRolConfirmado(false);
         return;
       }
 
@@ -91,11 +92,14 @@ const LoginForm = ({ onLogin }) => {
         if (response.ok) {
           const data = await response.json();
           setRolDetectado(data.tipo_usuario || null);
+          setRolConfirmado(true);
         } else {
           setRolDetectado(null);
+          setRolConfirmado(false);
         }
       } catch (error) {
         setRolDetectado(null);
+        setRolConfirmado(false);
       }
     };
 
@@ -229,10 +233,10 @@ const LoginForm = ({ onLogin }) => {
                 {config.description}
               </p>
               
-              {rolDetectado && (
+        {rolDetectado && (
                 <div className="mt-4 inline-flex items-center px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-slate-100 text-slate-700 border border-slate-200">
                   <User className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                  {rolDetectado.charAt(0).toUpperCase() + rolDetectado.slice(1)} detectado
+          {rolDetectado.charAt(0).toUpperCase() + rolDetectado.slice(1)} {rolConfirmado ? 'detectado' : 'posible'}
                 </div>
               )}
             </div>
