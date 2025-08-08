@@ -502,6 +502,26 @@ const Stock = () => {
     eliminarTipoFicha,
     loadAllData
   } = useFichas();
+
+  // --- DEDUPLICACIÓN DE DATOS PARA EVITAR WARNING DE CLAVES DUPLICADAS ---
+  // Si por cualquier razón el backend retorna elementos duplicados (mismo id),
+  // React mostrará el warning 'Encountered two children with the same key'.
+  // Normalizamos aquí para la capa de UI sin mutar los arrays originales del contexto.
+  const uniqueTiposFicha = React.useMemo(() => {
+    const seen = new Set();
+    return (tiposFicha || []).filter(t => t && !seen.has(t.id) && (seen.add(t.id), true));
+  }, [tiposFicha]);
+
+  const uniqueStockGlobal = React.useMemo(() => {
+    const seen = new Set();
+    return (stockGlobal || []).filter(it => it && !seen.has(it.tipo_ficha_id) && (seen.add(it.tipo_ficha_id), true));
+  }, [stockGlobal]);
+
+  // Helper para generar una key segura cuando el id falta o es 0 duplicado
+  const safeKey = (prefix, id, extra='') => {
+    if (id === undefined || id === null) return `${prefix}-null-${extra}`;
+    return `${prefix}-${id}-${extra}`;
+  };
   
   const [nuevoStock, setNuevoStock] = useState({ tipo: '', cantidad: '', precio: '' });
   const [porcentajeComisionGlobal, setPorcentajeComisionGlobal] = useState(25);
@@ -816,23 +836,23 @@ const Stock = () => {
       const sections = {
         agregar: (
           <SectionCard icon={<Plus className="w-6 h-6 text-blue-600" />} title="Agregar Stock" subtitle="Añade nuevas fichas al inventario">
-            <AddStockForm nuevoStock={nuevoStock} setNuevoStock={setNuevoStock} tiposFicha={tiposFicha} agregarStock={agregarStock} />
+            <AddStockForm nuevoStock={nuevoStock} setNuevoStock={setNuevoStock} tiposFicha={uniqueTiposFicha} agregarStock={agregarStock} />
           </SectionCard>
         ),
         entregar: (
           <SectionCard icon={<Send className="w-6 h-6 text-blue-600" />} title="Entregar Fichas" subtitle="Envía fichas a revendedores">
-            <DeliverStockForm entregaActual={entregaActual} setEntregaActual={setEntregaActual} revendedores={revendedores} tiposFicha={tiposFicha} entregarFichasDeStock={entregarFichasDeStock} />
+            <DeliverStockForm entregaActual={entregaActual} setEntregaActual={setEntregaActual} revendedores={revendedores} tiposFicha={uniqueTiposFicha} entregarFichasDeStock={entregarFichasDeStock} />
           </SectionCard>
         ),
         inventario: (
           <SectionCard icon={<Boxes className="w-6 h-6 text-blue-600" />} title="Inventario Global" subtitle="Stock disponible por tipo de ficha">
-            <GlobalStockInventory stockGlobal={stockGlobal} tiposFicha={tiposFicha} porcentajeComisionGlobal={porcentajeComisionGlobal} />
+            <GlobalStockInventory stockGlobal={uniqueStockGlobal} tiposFicha={uniqueTiposFicha} porcentajeComisionGlobal={porcentajeComisionGlobal} />
           </SectionCard>
         ),
         tipos: (
           <SectionCard icon={<Package className="w-6 h-6 text-blue-600" />} title="Tipos de Fichas" subtitle="Crea y administra los tipos de fichas">
             <TicketTypesManager 
-              tiposFicha={tiposFicha}
+              tiposFicha={uniqueTiposFicha}
               nuevoTipoFicha={nuevoTipoFicha} setNuevoTipoFicha={setNuevoTipoFicha}
               duracionNuevoTipo={duracionNuevoTipo} setDuracionNuevoTipo={setDuracionNuevoTipo}
               unidadDuracion={unidadDuracion} setUnidadDuracion={setUnidadDuracion}
