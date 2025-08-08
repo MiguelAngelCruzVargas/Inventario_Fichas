@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Wifi, 
@@ -18,7 +18,7 @@ import { conditionalLog } from '../utils/errorHandler';
 import CreateInitialAdmin from './common/CreateInitialAdmin';
 
 const LoginForm = ({ onLogin }) => {
-  const { login, loading } = useAuth();
+  const { login, loading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState({
     username: '',
@@ -63,59 +63,45 @@ const LoginForm = ({ onLogin }) => {
 
   // Detectar rol basado en el usuario ingresado
   useEffect(() => {
+    // Evitar detecciones cuando ya está autenticado para no disparar efectos innecesarios
+    if (isAuthenticated) return;
+
     const detectRole = async () => {
       const username = credentials.username.trim();
-      console.log('🔍 Detectando rol para username:', username);
-      
-      // No hacer consulta si el username está vacío
       if (!username) {
-        console.log('❌ Username vacío, no detectar rol');
         setRolDetectado(null);
         return;
       }
 
-      // Detección básica para usuarios conocidos (para UX rápida)
+      // Detección básica rápida
       const usernameLower = username.toLowerCase();
-      console.log('🔍 Username en minúsculas:', usernameLower);
-      
       if (usernameLower === 'admin') {
-        console.log('✅ Detectado: admin');
         setRolDetectado('admin');
         return;
       } else if (usernameLower === 'maria') {
-        console.log('✅ Detectado: revendedor (maria)');
         setRolDetectado('revendedor');
         return;
       } else if (usernameLower === 'prueba') {
-        console.log('✅ Detectado: trabajador (prueba)');
         setRolDetectado('trabajador');
         return;
       }
 
-      console.log('🔍 Usuario no reconocido, consultando backend...');
-      
-      // Para otros usuarios, consultar dinámicamente al backend
       try {
         const response = await fetch(`/api/auth/detect-role?username=${encodeURIComponent(username)}`);
         if (response.ok) {
           const data = await response.json();
-          console.log('✅ Respuesta del backend:', data);
           setRolDetectado(data.tipo_usuario || null);
         } else {
-          console.log('❌ Error en respuesta del backend:', response.status);
           setRolDetectado(null);
         }
       } catch (error) {
-        // En caso de error, no detectar rol (no es crítico)
-        console.log('❌ Error consultando backend:', error);
         setRolDetectado(null);
       }
     };
 
-    // Debounce para evitar demasiadas consultas
     const timeoutId = setTimeout(detectRole, 500);
     return () => clearTimeout(timeoutId);
-  }, [credentials.username]);
+  }, [credentials.username, isAuthenticated]);
 
   const handleInputChange = (field, value) => {
     setCredentials(prev => ({
@@ -158,41 +144,18 @@ const LoginForm = ({ onLogin }) => {
     }
   };
 
-  const getRolConfig = () => {
-    console.log('🎯 Generando config para rol:', rolDetectado);
-    const config = (() => {
-      switch (rolDetectado) {
-        case 'admin':
-          return {
-            icon: Shield,
-            title: 'Panel de Administrador',
-            description: 'Acceso completo al sistema'
-          };
-        case 'revendedor':
-          return {
-            icon: Building2,
-            title: 'Portal del Revendedor',
-            description: 'Gestiona tu inventario y ventas'
-          };
-        case 'trabajador':
-          return {
-            icon: Wrench,
-            title: 'Panel del Técnico',
-            description: 'Gestiona inventarios y entregas'
-          };
-        default:
-          return {
-            icon: Wifi,
-            title: 'Sistema de Fichas Internet',
-            description: 'Distribución y Control'
-          };
-      }
-    })();
-    console.log('📄 Config generada:', config);
-    return config;
-  };
-
-  const config = getRolConfig();
+  const config = useMemo(() => {
+    switch (rolDetectado) {
+      case 'admin':
+        return { icon: Shield, title: 'Panel de Administrador', description: 'Acceso completo al sistema' };
+      case 'revendedor':
+        return { icon: Building2, title: 'Portal del Revendedor', description: 'Gestiona tu inventario y ventas' };
+      case 'trabajador':
+        return { icon: Wrench, title: 'Panel del Técnico', description: 'Gestiona inventarios y entregas' };
+      default:
+        return { icon: Wifi, title: 'Sistema de Fichas Internet', description: 'Distribución y Control' };
+    }
+  }, [rolDetectado]);
   const IconComponent = config.icon;
 
 
