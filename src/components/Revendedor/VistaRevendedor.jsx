@@ -22,6 +22,7 @@ const VistaRevendedor = ({
   corteCaja, 
   historialCortes,
   tareasMantenimiento,
+  loading, // nuevo: estado de carga del contexto
   onLogout
 }) => {
   // Añadir verificaciones de seguridad para evitar errores
@@ -107,6 +108,19 @@ const VistaRevendedor = ({
   }
 
   // Si no hay datos del revendedor específico, mostrar error de permisos
+  // Evitar mostrar error de configuración mientras todavía estamos cargando
+  if (!misDatos && loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 font-medium">Cargando datos del revendedor...</p>
+          <p className="text-gray-400 text-sm mt-2">Preparando tu panel</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!misDatos) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
