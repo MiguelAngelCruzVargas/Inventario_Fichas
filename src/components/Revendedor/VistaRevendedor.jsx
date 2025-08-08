@@ -1,5 +1,5 @@
 // VistaRevendedor.jsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Package, 
   DollarSign, 
@@ -25,6 +25,18 @@ const VistaRevendedor = ({
   loading, // nuevo: estado de carga del contexto
   onLogout
 }) => {
+  // Estado local para controlar periodo de gracia y tiempo de montaje
+  const [graceExpired, setGraceExpired] = useState(false);
+  const [mountTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    // Periodo de gracia corto para evitar parpadeo (ej. render inicial + layout)
+    const graceTimer = setTimeout(() => setGraceExpired(true), 1200); // 1.2s
+    return () => clearTimeout(graceTimer);
+  }, []);
+
+  const initialPendingWindow = Date.now() - mountTime < 4000; // El contexto espera 3s antes de cargar
+
   // Añadir verificaciones de seguridad para evitar errores
   // Buscar por revendedor_id, no por user id
   const misDatos = (revendedores || []).find(r => r.id === currentUser?.revendedor_id);
@@ -109,7 +121,7 @@ const VistaRevendedor = ({
 
   // Si no hay datos del revendedor específico, mostrar error de permisos
   // Evitar mostrar error de configuración mientras todavía estamos cargando
-  if (!misDatos && loading) {
+  if (!misDatos && (loading || !graceExpired || initialPendingWindow)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
