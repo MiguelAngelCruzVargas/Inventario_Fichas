@@ -31,11 +31,11 @@ router.get('/stats', authenticateToken, requireRole(['admin']), async (req, res)
       LEFT JOIN (
           SELECT
               i.revendedor_id,
-              SUM(CASE WHEN tf.nombre LIKE '%1h%' OR tf.nombre LIKE '%1 hora%' THEN i.stock_actual ELSE 0 END) AS fichas1h,
-              SUM(CASE WHEN tf.nombre LIKE '%2h%' OR tf.nombre LIKE '%2 horas%' THEN i.stock_actual ELSE 0 END) AS fichas2h,
-              SUM(CASE WHEN tf.nombre LIKE '%3h%' OR tf.nombre LIKE '%3 horas%' THEN i.stock_actual ELSE 0 END) AS fichas3h,
-              SUM(CASE WHEN tf.nombre LIKE '%5h%' OR tf.nombre LIKE '%5 horas%' THEN i.stock_actual ELSE 0 END) AS fichas5h,
-              SUM(i.stock_actual) AS total_fichas
+              SUM(CASE WHEN tf.nombre LIKE '%1h%' OR tf.nombre LIKE '%1 hora%' THEN (i.fichas_entregadas - i.fichas_vendidas) ELSE 0 END) AS fichas1h,
+              SUM(CASE WHEN tf.nombre LIKE '%2h%' OR tf.nombre LIKE '%2 horas%' THEN (i.fichas_entregadas - i.fichas_vendidas) ELSE 0 END) AS fichas2h,
+              SUM(CASE WHEN tf.nombre LIKE '%3h%' OR tf.nombre LIKE '%3 horas%' THEN (i.fichas_entregadas - i.fichas_vendidas) ELSE 0 END) AS fichas3h,
+              SUM(CASE WHEN tf.nombre LIKE '%5h%' OR tf.nombre LIKE '%5 horas%' THEN (i.fichas_entregadas - i.fichas_vendidas) ELSE 0 END) AS fichas5h,
+              SUM(i.fichas_entregadas - i.fichas_vendidas) AS total_fichas
           FROM
               inventarios i
           LEFT JOIN

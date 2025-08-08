@@ -251,13 +251,19 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       setLoading(true);
+      console.log('🔐 Iniciando login con:', credentials.username);
+      
       const response = await authService.login(credentials);
+      console.log('✅ Respuesta del login:', response);
       
       // Setear el estado inmediatamente
       setUser(response.user);
       setIsAuthenticated(true);
       // Marcar que ya se hizo una verificación inicial después del login
       setInitialSessionCheck(true);
+      
+      console.log('👤 Usuario configurado:', response.user);
+      console.log('🔑 Estado autenticado:', true);
       
       // Configurar monitoreo de sesión si hay información de expiración
       if (response.expiresAt) {

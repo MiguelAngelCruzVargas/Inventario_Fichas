@@ -23,6 +23,7 @@ const RevendedorWrapper = () => {
     corteCaja: fichasContext.corteCaja || { resumenPorRevendedor: [] },
     historialCortes: fichasContext.historialCortes || [], // Agregar historial de cortes
     tareasMantenimiento: fichasContext.tareasMantenimiento || [],
+    loading: fichasContext.loading, // Pasar el estado de loading
     onLogout: handleLogout
   };
 

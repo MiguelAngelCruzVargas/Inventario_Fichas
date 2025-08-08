@@ -17,10 +17,10 @@ const apiClient = axios.create({
   },
 });
 
-// Throttling global para prevenir rate limiting - MUY LIGERO
+// Throttling global para prevenir rate limiting - CONFIGURACIÓN MEJORADA
 const requestThrottle = new Map();
 const requestCounts = new Map();
-const THROTTLE_TIME = 50; // Reducido a solo 50ms para mejor UX
+const THROTTLE_TIME = 200; // Aumentado a 200ms para mayor estabilidad
 
 // Función para verificar si una petición debe ser throttled
 const shouldThrottleRequest = (endpoint) => {
@@ -30,21 +30,49 @@ const shouldThrottleRequest = (endpoint) => {
   const lastRequest = requestThrottle.get(endpoint) || 0;
   const requestCount = requestCounts.get(endpoint) || 0;
   
-  // Resetear contador cada 30 segundos
-  const thirtySecondsAgo = now - 30000;
-  if (lastRequest < thirtySecondsAgo) {
+  // Resetear contador cada 10 segundos (más frecuente)
+  const tenSecondsAgo = now - 10000;
+  if (lastRequest < tenSecondsAgo) {
     requestCounts.set(endpoint, 0);
   }
   
-  // Permitir primeras 5 peticiones sin throttling
-  if (requestCount < 5) {
+  // Ser más permisivo con endpoints críticos para actualizaciones en tiempo real
+  const criticalEndpoints = ['/usuarios', '/tareas/trabajadores/disponibles', '/tareas'];
+  const isCritical = criticalEndpoints.some(critical => endpoint?.includes(critical));
+  
+  if (isCritical) {
+    // Para endpoints críticos: permitir primeras 3 peticiones sin throttling
+    if (requestCount < 3) {
+      requestCounts.set(endpoint, requestCount + 1);
+      requestThrottle.set(endpoint, now);
+      return false;
+    }
+    
+    // Solo throttle si es MUY frecuente (menos de 300ms para dar más margen)
+    const timeDiff = now - lastRequest;
+    const shouldThrottle = timeDiff < 300; // Aumentado de 200ms a 300ms
+    
+    if (!shouldThrottle) {
+      requestCounts.set(endpoint, requestCount + 1);
+      requestThrottle.set(endpoint, now);
+    } else {
+      // En lugar de throttling duro, agregar delay pequeño y permitir
+      console.log(`⏳ Retrasando petición a ${endpoint} por ${300 - timeDiff}ms`);
+      return false; // No throttlear, solo logear
+    }
+    
+    return false; // Nunca throttlear endpoints críticos después del primer intento
+  }
+  
+  // Para otros endpoints: lógica original más permisiva
+  if (requestCount < 8) {
     requestCounts.set(endpoint, requestCount + 1);
     requestThrottle.set(endpoint, now);
     return false;
   }
   
-  // Solo throttle si hay más de 10 peticiones por minuto
-  if (requestCount > 10) {
+  // Solo throttle si hay más de 15 peticiones por minuto
+  if (requestCount > 15) {
     const timeDiff = now - lastRequest;
     const shouldThrottle = timeDiff < THROTTLE_TIME;
     

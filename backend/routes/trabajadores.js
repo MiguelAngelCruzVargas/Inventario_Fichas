@@ -167,14 +167,18 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
     console.log(`🗑️ DELETE /api/trabajadores/${id} - Iniciando eliminación de trabajador`);
 
     try {
-        // --- Desactivar en ambas tablas ---
-        console.log(`🔄 Desactivando usuario en tabla usuarios con ID: ${id}`);
-        await query(`UPDATE usuarios SET activo = 0 WHERE id = ?`, [id]);
+        // --- Eliminar en cascada: tareas, trabajador, usuario ---
+        console.log(`🔄 Eliminando tareas asignadas al trabajador con ID: ${id}`);
+        const tareasResult = await query(`DELETE FROM tareas_mantenimiento WHERE trabajador_id = ?`, [id]);
+        console.log(`✅ ${tareasResult.affectedRows} tareas eliminadas`);
         
-        console.log(`🔄 Desactivando trabajador en tabla trabajadores_mantenimiento con ID: ${id}`);
-        await query(`UPDATE trabajadores_mantenimiento SET activo = 0 WHERE id = ?`, [id]);
+        console.log(`🔄 Eliminando trabajador en tabla trabajadores_mantenimiento con ID: ${id}`);
+        await query(`DELETE FROM trabajadores_mantenimiento WHERE id = ?`, [id]);
         
-        console.log(`✅ Trabajador desactivado con ID: ${id}`);
+        console.log(`🔄 Eliminando usuario en tabla usuarios con ID: ${id}`);
+        await query(`DELETE FROM usuarios WHERE id = ?`, [id]);
+        
+        console.log(`✅ Trabajador eliminado completamente con ID: ${id}`);
 
         res.json({ 
             success: true, 

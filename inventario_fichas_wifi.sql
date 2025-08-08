@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 02-08-2025 a las 22:22:41
+-- Tiempo de generación: 07-08-2025 a las 22:57:20
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -133,17 +133,6 @@ CREATE TABLE `cortes_caja` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
--- Volcado de datos para la tabla `cortes_caja`
---
-
-INSERT INTO `cortes_caja` (`id`, `fecha_corte`, `usuario_id`, `usuario_nombre`, `total_ingresos`, `total_ganancias`, `total_revendedores`, `detalle_tipos`, `observaciones`, `created_at`, `updated_at`) VALUES
-(4, '2025-08-02', 1, 'admin', 250.00, 50.00, 200.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":100,\"vendidas\":50,\"inventarioResultante\":50,\"valorVendido\":250,\"precio\":\"5.00\"}]', 'Corte para cafe intenet', '2025-08-02 07:10:30', '2025-08-02 07:10:30'),
-(5, '2025-08-02', 1, 'admin', 50.00, 10.00, 40.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":50,\"vendidas\":10,\"inventarioResultante\":40,\"valorVendido\":50,\"precio\":\"5.00\"}]', 'Corte para cafe intenet', '2025-08-02 07:15:56', '2025-08-02 07:15:56'),
-(6, '2025-08-02', 1, 'admin', 50.00, 10.00, 40.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":40,\"vendidas\":10,\"inventarioResultante\":30,\"valorVendido\":50,\"valor_total\":50,\"precio\":\"5.00\"}]', 'Corte para cafe intenet', '2025-08-02 07:21:17', '2025-08-02 07:21:17'),
-(7, '2025-08-02', 1, 'admin', 50.00, 10.00, 40.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":30,\"vendidas\":10,\"inventarioResultante\":20,\"valorVendido\":50,\"valor_total\":50,\"precio\":\"5.00\"}]', 'Corte para cafe intenet', '2025-08-02 07:22:38', '2025-08-02 07:22:38'),
-(8, '2025-08-02', 1, 'admin', 5.00, 1.00, 4.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":20,\"vendidas\":1,\"inventarioResultante\":19,\"valorVendido\":5,\"valor_total\":5,\"precio\":\"5.00\"}]', 'Corte para cafe intenet', '2025-08-02 18:26:49', '2025-08-02 18:26:49');
-
 -- --------------------------------------------------------
 
 --
@@ -180,16 +169,6 @@ CREATE TABLE `entregas` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
--- Volcado de datos para la tabla `entregas`
---
-
-INSERT INTO `entregas` (`id`, `revendedor_id`, `tipo_ficha_id`, `cantidad`, `tipo_movimiento`, `nota`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 11, 29, 50, 'entrega', 'Entrega desde stock global', 1, '2025-08-02 06:17:43', '2025-08-02 06:17:43'),
-(2, 11, 29, 100, 'entrega', 'Entrega desde stock global', 1, '2025-08-02 07:02:40', '2025-08-02 07:02:40'),
-(3, 11, 29, 1, 'entrega', 'Entrega desde stock global', 1, '2025-08-02 18:27:04', '2025-08-02 18:27:04'),
-(4, 11, 29, 1, 'entrega', 'Entrega desde stock global', 1, '2025-08-02 18:51:46', '2025-08-02 18:51:46');
-
 -- --------------------------------------------------------
 
 --
@@ -208,13 +187,6 @@ CREATE TABLE `inventarios` (
   `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `activo` tinyint(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Volcado de datos para la tabla `inventarios`
---
-
-INSERT INTO `inventarios` (`id`, `revendedor_id`, `tipo_ficha_id`, `fichas_entregadas`, `fichas_vendidas`, `stock_actual`, `stock_minimo`, `ubicacion`, `fecha_actualizacion`, `activo`) VALUES
-(3, 11, 29, 102, 81, 20, 10, NULL, '2025-08-02 18:51:46', 1);
 
 -- --------------------------------------------------------
 
@@ -309,7 +281,7 @@ CREATE TABLE `revendedores` (
 --
 
 INSERT INTO `revendedores` (`id`, `usuario_id`, `nombre_negocio`, `nombre`, `responsable`, `telefono`, `direccion`, `activo`, `porcentaje_comision`, `created_at`, `updated_at`) VALUES
-(11, 9, 'cafe intenet', 'maria juana', 'maria juana', NULL, NULL, 1, 20.00, '2025-08-02 06:09:19', '2025-08-02 06:50:52');
+(0, 0, 'cafe maria', 'maria juana', 'maria juana', '', '', 1, 20.00, '2025-08-07 18:04:24', '2025-08-07 18:04:24');
 
 -- --------------------------------------------------------
 
@@ -416,13 +388,6 @@ CREATE TABLE `trabajadores_mantenimiento` (
   `usuario_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
--- Volcado de datos para la tabla `trabajadores_mantenimiento`
---
-
-INSERT INTO `trabajadores_mantenimiento` (`id`, `nombre_completo`, `especialidad`, `email`, `username`, `password`, `activo`, `created_at`, `updated_at`, `usuario_id`) VALUES
-(6, 'juan perez', 'General', 'prueba@empresa.com', 'prueba', '', 1, '2025-08-02 06:00:13', '2025-08-02 06:00:13', 7);
-
 -- --------------------------------------------------------
 
 --
@@ -452,9 +417,7 @@ CREATE TABLE `usuarios` (
 --
 
 INSERT INTO `usuarios` (`id`, `username`, `email`, `password_hash`, `nombre_completo`, `tipo_usuario`, `revendedor_id`, `activo`, `ultimo_login`, `fecha_creacion`, `created_at`, `updated_at`, `telefono`, `role`, `especialidad`) VALUES
-(1, 'admin', 'admin@fichas.com', '$2b$10$vLnz3rDLw9NpaByJZsuIBOg94PGxNK7qnLk5gBeJqhGlYPVqUlct2', 'Administrador Principal', 'admin', NULL, 1, '2025-08-02 20:08:23', '2025-07-29 03:15:23', '2025-08-02 04:34:50', '2025-08-02 20:08:23', NULL, 'admin', NULL),
-(7, 'prueba', 'prueba@empresa.com', '$2b$10$sdjrl2/XD2EuSJZXCEEu6OnLZOPfitVf1v9o1Ko0Y4urMbRp5sjXG', 'juan perez', 'trabajador', NULL, 1, '2025-08-02 19:59:16', '2025-08-02 06:00:13', '2025-08-02 06:00:13', '2025-08-02 19:59:16', NULL, 'trabajador', NULL),
-(9, 'maria1', 'maria1@empresa.com', '$2b$10$dUfSBxjtmFgqtspuGa4HGeR.R35Pxe9YH7mARXGgSssef0Gmw2L9a', 'maria juana', 'revendedor', 11, 1, '2025-08-02 18:30:43', '2025-08-02 06:09:19', '2025-08-02 06:09:19', '2025-08-02 18:30:43', NULL, 'revendedor', NULL);
+(1, 'admin', 'admin@fichas.com', '$2b$10$vLnz3rDLw9NpaByJZsuIBOg94PGxNK7qnLk5gBeJqhGlYPVqUlct2', 'Administrador Principal', 'admin', NULL, 1, '2025-08-07 18:28:26', '2025-07-29 03:15:23', '2025-08-02 04:34:50', '2025-08-07 18:28:26', NULL, 'admin', NULL);
 
 -- --------------------------------------------------------
 
@@ -539,15 +502,6 @@ CREATE TABLE `v_stock_global` (
 -- --------------------------------------------------------
 
 --
--- Estructura Stand-in para la vista `v_tareas_pendientes`
--- (Véase abajo para la vista actual)
---
-CREATE TABLE `v_tareas_pendientes` (
-);
-
--- --------------------------------------------------------
-
---
 -- Estructura para la vista `v_resumen_financiero`
 --
 DROP TABLE IF EXISTS `v_resumen_financiero`;
@@ -562,15 +516,6 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW 
 DROP TABLE IF EXISTS `v_stock_global`;
 
 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_stock_global`  AS SELECT `tf`.`nombre` AS `tipo_ficha`, `tf`.`precio_base` AS `precio_base`, `tf`.`comision_base` AS `comision_base`, `sg`.`cantidad_total` AS `cantidad_total`, `sg`.`cantidad_disponible` AS `cantidad_disponible`, `sg`.`cantidad_entregada` AS `cantidad_entregada`, `sg`.`cantidad_total`- `sg`.`cantidad_disponible` - `sg`.`cantidad_entregada` AS `cantidad_consumida` FROM (`tipos_ficha` `tf` join `stock_global` `sg` on(`tf`.`id` = `sg`.`tipo_ficha_id`)) WHERE `tf`.`activo` = 1 ;
-
--- --------------------------------------------------------
-
---
--- Estructura para la vista `v_tareas_pendientes`
---
-DROP TABLE IF EXISTS `v_tareas_pendientes`;
-
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_tareas_pendientes`  AS SELECT `t`.`id` AS `id`, `t`.`titulo` AS `titulo`, `t`.`descripcion` AS `descripcion`, `t`.`prioridad` AS `prioridad`, `t`.`fecha_vencimiento` AS `fecha_vencimiento`, CASE WHEN `t`.`fecha_vencimiento` < curdate() THEN 'Vencida' WHEN `t`.`fecha_vencimiento` = curdate() THEN 'Vence Hoy' ELSE 'Pendiente' END AS `estado_vencimiento`, `r`.`nombre` AS `revendedor`, `tr`.`nombre_completo` AS `trabajador` FROM ((`tareas_mantenimiento` `t` join `revendedores` `r` on(`t`.`revendedor_id` = `r`.`id`)) join `trabajadores` `tr` on(`t`.`trabajador_id` = `tr`.`id`)) WHERE `t`.`estado` = 'Pendiente' ORDER BY `t`.`fecha_vencimiento` ASC ;
 
 --
 -- Índices para tablas volcadas
@@ -600,365 +545,20 @@ ALTER TABLE `configuraciones`
   ADD UNIQUE KEY `clave` (`clave`);
 
 --
--- Indices de la tabla `configuracion_global`
---
-ALTER TABLE `configuracion_global`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `clave` (`clave`),
-  ADD KEY `idx_configuracion_clave` (`clave`);
-
---
--- Indices de la tabla `cortes_caja`
---
-ALTER TABLE `cortes_caja`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_fecha_corte` (`fecha_corte`),
-  ADD KEY `idx_usuario` (`usuario_id`),
-  ADD KEY `idx_created_at` (`created_at`);
-
---
--- Indices de la tabla `entregas`
---
-ALTER TABLE `entregas`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_revendedor` (`revendedor_id`),
-  ADD KEY `idx_tipo_ficha` (`tipo_ficha_id`),
-  ADD KEY `idx_fecha` (`created_at`);
-
---
--- Indices de la tabla `inventarios`
---
-ALTER TABLE `inventarios`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_revendedor_tipo` (`revendedor_id`,`tipo_ficha_id`),
-  ADD KEY `tipo_ficha_id` (`tipo_ficha_id`),
-  ADD KEY `idx_revendedor` (`revendedor_id`);
-
---
--- Indices de la tabla `inventarios_revendedor`
---
-ALTER TABLE `inventarios_revendedor`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_inventario` (`revendedor_id`,`tipo_ficha_id`),
-  ADD KEY `tipo_ficha_id` (`tipo_ficha_id`),
-  ADD KEY `idx_inventarios_revendedor` (`revendedor_id`);
-
---
--- Indices de la tabla `precios`
---
-ALTER TABLE `precios`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `tipo_ficha_id` (`tipo_ficha_id`),
-  ADD KEY `idx_revendedor_id` (`revendedor_id`);
-
---
--- Indices de la tabla `precios_revendedor`
---
-ALTER TABLE `precios_revendedor`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_revendedor_tipo` (`revendedor_id`,`tipo_ficha_id`),
-  ADD KEY `tipo_ficha_id` (`tipo_ficha_id`);
-
---
--- Indices de la tabla `reportes_inventario`
---
-ALTER TABLE `reportes_inventario`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_revendedor_fecha` (`revendedor_id`,`fecha_reporte`),
-  ADD KEY `idx_estado` (`estado`),
-  ADD KEY `idx_fecha_reporte` (`fecha_reporte`);
-
---
--- Indices de la tabla `revendedores`
---
-ALTER TABLE `revendedores`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_usuario` (`usuario_id`),
-  ADD KEY `idx_revendedores_activo` (`activo`),
-  ADD KEY `idx_revendedores_porcentaje` (`porcentaje_comision`);
-
---
--- Indices de la tabla `stock_global`
---
-ALTER TABLE `stock_global`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `tipo_ficha_id` (`tipo_ficha_id`);
-
---
 -- Indices de la tabla `tareas_mantenimiento`
 --
 ALTER TABLE `tareas_mantenimiento`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `revendedor_id` (`revendedor_id`),
-  ADD KEY `idx_tareas_estado` (`estado`),
-  ADD KEY `fk_tareas_created_by` (`created_by`),
-  ADD KEY `fk_tareas_trabajador_usuario` (`trabajador_id`);
-
---
--- Indices de la tabla `tipos_ficha`
---
-ALTER TABLE `tipos_ficha`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `nombre` (`nombre`);
-
---
--- Indices de la tabla `tipos_fichas`
---
-ALTER TABLE `tipos_fichas`
   ADD PRIMARY KEY (`id`);
-
---
--- Indices de la tabla `trabajadores_mantenimiento`
---
-ALTER TABLE `trabajadores_mantenimiento`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `email` (`email`),
-  ADD UNIQUE KEY `username` (`username`),
-  ADD KEY `idx_username` (`username`),
-  ADD KEY `idx_email` (`email`),
-  ADD KEY `idx_activo` (`activo`),
-  ADD KEY `fk_trabajadores_usuario` (`usuario_id`);
-
---
--- Indices de la tabla `usuarios`
---
-ALTER TABLE `usuarios`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `username` (`username`),
-  ADD UNIQUE KEY `email` (`email`),
-  ADD KEY `revendedor_id` (`revendedor_id`),
-  ADD KEY `idx_usuarios_username` (`username`),
-  ADD KEY `idx_usuarios_tipo` (`tipo_usuario`);
-
---
--- Indices de la tabla `ventas`
---
-ALTER TABLE `ventas`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `tipo_ficha_id` (`tipo_ficha_id`),
-  ADD KEY `idx_ventas_fecha` (`fecha_venta`),
-  ADD KEY `idx_ventas_revendedor` (`revendedor_id`);
 
 --
 -- AUTO_INCREMENT de las tablas volcadas
 --
 
 --
--- AUTO_INCREMENT de la tabla `abastecimientos`
---
-ALTER TABLE `abastecimientos`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
--- AUTO_INCREMENT de la tabla `ajustes_stock`
---
-ALTER TABLE `ajustes_stock`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `configuraciones`
---
-ALTER TABLE `configuraciones`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
-
---
--- AUTO_INCREMENT de la tabla `configuracion_global`
---
-ALTER TABLE `configuracion_global`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
-
---
--- AUTO_INCREMENT de la tabla `cortes_caja`
---
-ALTER TABLE `cortes_caja`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
-
---
--- AUTO_INCREMENT de la tabla `entregas`
---
-ALTER TABLE `entregas`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
-
---
--- AUTO_INCREMENT de la tabla `inventarios`
---
-ALTER TABLE `inventarios`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
-
---
--- AUTO_INCREMENT de la tabla `inventarios_revendedor`
---
-ALTER TABLE `inventarios_revendedor`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `precios`
---
-ALTER TABLE `precios`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=50;
-
---
--- AUTO_INCREMENT de la tabla `precios_revendedor`
---
-ALTER TABLE `precios_revendedor`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `reportes_inventario`
---
-ALTER TABLE `reportes_inventario`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `revendedores`
---
-ALTER TABLE `revendedores`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
-
---
--- AUTO_INCREMENT de la tabla `stock_global`
---
-ALTER TABLE `stock_global`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
-
---
 -- AUTO_INCREMENT de la tabla `tareas_mantenimiento`
 --
 ALTER TABLE `tareas_mantenimiento`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
-
---
--- AUTO_INCREMENT de la tabla `tipos_ficha`
---
-ALTER TABLE `tipos_ficha`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
-
---
--- AUTO_INCREMENT de la tabla `tipos_fichas`
---
-ALTER TABLE `tipos_fichas`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
-
---
--- AUTO_INCREMENT de la tabla `trabajadores_mantenimiento`
---
-ALTER TABLE `trabajadores_mantenimiento`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
-
---
--- AUTO_INCREMENT de la tabla `usuarios`
---
-ALTER TABLE `usuarios`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
-
---
--- AUTO_INCREMENT de la tabla `ventas`
---
-ALTER TABLE `ventas`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- Restricciones para tablas volcadas
---
-
---
--- Filtros para la tabla `abastecimientos`
---
-ALTER TABLE `abastecimientos`
-  ADD CONSTRAINT `abastecimientos_ibfk_1` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `abastecimientos_ibfk_2` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `ajustes_stock`
---
-ALTER TABLE `ajustes_stock`
-  ADD CONSTRAINT `ajustes_stock_ibfk_1` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `ajustes_stock_ibfk_2` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `cortes_caja`
---
-ALTER TABLE `cortes_caja`
-  ADD CONSTRAINT `cortes_caja_ibfk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `entregas`
---
-ALTER TABLE `entregas`
-  ADD CONSTRAINT `entregas_tipo_ficha_fk` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `inventarios`
---
-ALTER TABLE `inventarios`
-  ADD CONSTRAINT `inventarios_ibfk_1` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`),
-  ADD CONSTRAINT `inventarios_revendedor_fk` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `inventarios_revendedor`
---
-ALTER TABLE `inventarios_revendedor`
-  ADD CONSTRAINT `inventarios_revendedor_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `inventarios_revendedor_ibfk_2` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_ficha` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `precios`
---
-ALTER TABLE `precios`
-  ADD CONSTRAINT `fk_precios_revendedor` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`),
-  ADD CONSTRAINT `precios_ibfk_1` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`);
-
---
--- Filtros para la tabla `precios_revendedor`
---
-ALTER TABLE `precios_revendedor`
-  ADD CONSTRAINT `precios_revendedor_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `precios_revendedor_ibfk_2` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_ficha` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `reportes_inventario`
---
-ALTER TABLE `reportes_inventario`
-  ADD CONSTRAINT `reportes_inventario_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `revendedores`
---
-ALTER TABLE `revendedores`
-  ADD CONSTRAINT `revendedores_ibfk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `stock_global`
---
-ALTER TABLE `stock_global`
-  ADD CONSTRAINT `stock_global_ibfk_1` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `tareas_mantenimiento`
---
-ALTER TABLE `tareas_mantenimiento`
-  ADD CONSTRAINT `fk_tareas_created_by` FOREIGN KEY (`created_by`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `fk_tareas_trabajador_usuario` FOREIGN KEY (`trabajador_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `tareas_mantenimiento_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE;
-
---
--- Filtros para la tabla `trabajadores_mantenimiento`
---
-ALTER TABLE `trabajadores_mantenimiento`
-  ADD CONSTRAINT `fk_trabajadores_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Filtros para la tabla `usuarios`
---
-ALTER TABLE `usuarios`
-  ADD CONSTRAINT `usuarios_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE SET NULL;
-
---
--- Filtros para la tabla `ventas`
---
-ALTER TABLE `ventas`
-  ADD CONSTRAINT `ventas_ibfk_1` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `ventas_ibfk_2` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_ficha` (`id`) ON DELETE CASCADE;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

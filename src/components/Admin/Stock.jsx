@@ -78,13 +78,15 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
  * Tarjeta de resumen para mostrar métricas clave.
  */
 const SummaryCard = ({ titulo, valor, icono, colorClass }) => (
-  <div className="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow duration-300">
-    <div className="flex items-center justify-between">
-      <div className='min-w-0'>
-        <p className={`text-sm font-semibold ${colorClass} uppercase tracking-wider`}>{titulo}</p>
-        <p className="text-3xl font-bold text-gray-800 mt-1 truncate">{valor}</p>
+  <div className="bg-white border border-gray-200/80 rounded-2xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow duration-300">
+    <div className="flex items-center justify-between gap-2">
+      <div className='min-w-0 flex-1'>
+        <p className={`text-xs sm:text-sm font-semibold ${colorClass} uppercase tracking-wider leading-tight`}>{titulo}</p>
+        <p className="text-lg sm:text-3xl font-bold text-gray-800 mt-1 truncate leading-tight">{valor}</p>
       </div>
-      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${colorClass} bg-opacity-10 flex-shrink-0`}>{icono}</div>
+      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center ${colorClass} bg-opacity-10 flex-shrink-0`}>
+        <div className="w-5 h-5 sm:w-6 sm:h-6">{icono}</div>
+      </div>
     </div>
   </div>
 );
@@ -898,11 +900,11 @@ const Stock = () => {
                 </div>
             </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <SummaryCard titulo="Total Fichas" valor={totales.totalFichas.toLocaleString()} icono={<Package className="w-6 h-6" />} colorClass="text-blue-600" />
-          <SummaryCard titulo="Valor Total" valor={`$${totales.valorTotal.toLocaleString('es-MX')}`} icono={<DollarSign className="w-6 h-6" />} colorClass="text-green-600" />
-          <SummaryCard titulo="Tu Ganancia" valor={`$${totales.comisionTotal.toLocaleString('es-MX')}`} icono={<Users className="w-6 h-6" />} colorClass="text-amber-600" />
-          <SummaryCard titulo="P/ Revendedores" valor={`$${totales.gananciaTotal.toLocaleString('es-MX')}`} icono={<TrendingUp className="w-6 h-6" />} colorClass="text-teal-600" />
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+          <SummaryCard titulo="Total Fichas" valor={totales.totalFichas.toLocaleString()} icono={<Package />} colorClass="text-blue-600" />
+          <SummaryCard titulo="Valor Total" valor={`$${totales.valorTotal.toLocaleString('es-MX')}`} icono={<DollarSign />} colorClass="text-green-600" />
+          <SummaryCard titulo="Tu Ganancia" valor={`$${totales.comisionTotal.toLocaleString('es-MX')}`} icono={<Users />} colorClass="text-amber-600" />
+          <SummaryCard titulo="P/ Revendedores" valor={`$${totales.gananciaTotal.toLocaleString('es-MX')}`} icono={<TrendingUp />} colorClass="text-teal-600" />
         </div>
 
         {/* --- VISTA MÓVIL Y DESKTOP --- */}

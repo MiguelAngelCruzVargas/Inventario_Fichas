@@ -6,52 +6,117 @@ class UsuariosService {
   // MÉTODOS GENÉRICOS DE USUARIOS (PARA ADMINS)
   // ==================================================
 
-  // Obtener todos los usuarios (vista consolidada)
-  async obtenerUsuarios() {
+  // Obtener todos los usuarios (vista consolidada) - con retry automático
+  async obtenerUsuarios(retryCount = 0) {
+    const maxRetries = 3;
+    
     try {
       const response = await apiClient.get('/usuarios');
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Error al obtener usuarios:', error);
-      return { success: false, error: error.response?.data?.message || 'Error al obtener usuarios' };
+      console.error(`Error al obtener usuarios (intento ${retryCount + 1}):`, error);
+      
+      // Si es error de throttling y tenemos retries disponibles
+      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 500; // 500ms, 1000ms, 1500ms
+        console.log(`⏳ Reintentando en ${delay}ms...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.obtenerUsuarios(retryCount + 1);
+      }
+      
+      // Error final o no es throttling
+      const errorMessage = error.message?.includes('throttled') 
+        ? 'Sistema ocupado, reintentando automáticamente...'
+        : error.response?.data?.message || 'Error al obtener usuarios';
+        
+      return { success: false, error: errorMessage };
     }
   }
 
-  // Crear nuevo usuario (usado principalmente para el rol de 'admin')
-  async crearUsuario(datosUsuario) {
+  // Crear nuevo usuario (usado principalmente para el rol de 'admin') - con retry automático
+  async crearUsuario(datosUsuario, retryCount = 0) {
+    const maxRetries = 2;
+    
     try {
       const response = await apiClient.post('/usuarios', datosUsuario);
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Error al crear usuario genérico:', error);
-      return { success: false, error: error.response?.data?.message || 'Error al crear usuario' };
+      console.error(`Error al crear usuario (intento ${retryCount + 1}):`, error);
+      
+      // Si es error de throttling y tenemos retries disponibles
+      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 400;
+        console.log(`⏳ Reintentando creación en ${delay}ms...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.crearUsuario(datosUsuario, retryCount + 1);
+      }
+      
+      // Error final
+      const errorMessage = error.message?.includes('throttled') 
+        ? 'Sistema ocupado, reintentando automáticamente...'
+        : error.response?.data?.message || 'Error al crear usuario';
+        
+      return { success: false, error: errorMessage };
     }
   }
 
-  // Actualizar usuario (usado principalmente para el rol de 'admin')
-  async actualizarUsuario(id, datosUsuario) {
+  // Actualizar usuario (usado principalmente para el rol de 'admin') - con retry automático
+  async actualizarUsuario(id, datosUsuario, retryCount = 0) {
+    const maxRetries = 2;
+    
     try {
       const response = await apiClient.put(`/usuarios/${id}`, datosUsuario);
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Error al actualizar usuario genérico:', error);
-      return { success: false, error: error.response?.data?.message || 'Error al actualizar usuario' };
+      console.error(`Error al actualizar usuario (intento ${retryCount + 1}):`, error);
+      
+      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 400;
+        console.log(`⏳ Reintentando actualización en ${delay}ms...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.actualizarUsuario(id, datosUsuario, retryCount + 1);
+      }
+      
+      const errorMessage = error.message?.includes('throttled') 
+        ? 'Sistema ocupado, reintentando automáticamente...'
+        : error.response?.data?.message || 'Error al actualizar usuario';
+        
+      return { success: false, error: errorMessage };
     }
   }
 
-  // Eliminar usuario (usado principalmente para el rol de 'admin')
-  async eliminarUsuario(id) {
+  // Eliminar usuario (usado principalmente para el rol de 'admin') - con retry automático  
+  async eliminarUsuario(id, retryCount = 0) {
+    const maxRetries = 2;
+    
     try {
       const response = await apiClient.delete(`/usuarios/${id}`);
       return { success: true, data: response.data };
     } catch (error) {
+      console.error(`Error al eliminar usuario (intento ${retryCount + 1}):`, error);
+      
+      // Retry solo para errores de throttling
+      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 400;
+        console.log(`⏳ Reintentando eliminación en ${delay}ms...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.eliminarUsuario(id, retryCount + 1);
+      }
+      
+      // Para otros errores, mantener la lógica original de manejo de errores
       // Solo hacer log del error si es necesario para debugging, no mostrar detalles técnicos al usuario
       console.debug('Detalles técnicos del error:', error.response?.status, error.response?.statusText);
       
       // Extraer el mensaje de error más específico del backend
       let errorMessage = 'Error al eliminar usuario';
       
-      if (error.response?.data?.message) {
+      if (error.message?.includes('throttled')) {
+        errorMessage = 'Sistema ocupado, reintentando automáticamente...';
+      } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -171,6 +236,20 @@ class UsuariosService {
     } catch (error) {
       console.error('Error al actualizar perfil:', error);
       return { success: false, error: error.response?.data?.message || 'Error al actualizar perfil' };
+    }
+  }
+
+  // Obtener vista previa de eliminación
+  async obtenerVistaEliminacion(id) {
+    try {
+      const response = await apiClient.get(`/usuarios/${id}/deletion-preview`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error al obtener vista previa de eliminación:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.message || 'Error al obtener información de eliminación' 
+      };
     }
   }
 

@@ -197,6 +197,8 @@ const RevendedorCard = ({
                     const vendidas = inventarioItem?.fichas_vendidas || 0;
                     // Usar stock_actual de la base de datos en lugar de calcular entregadas - vendidas
                     const existentes = inventarioItem?.stock_actual ?? (entregadas - vendidas);
+                    // ⚠️ CORRECCIÓN: Para mostrar, siempre calcular correctamente: entregadas - vendidas
+                    const existentesCalculado = entregadas - vendidas;
 
                     if (entregadas === 0 && vendidas === 0) return null;
 
@@ -223,7 +225,7 @@ const RevendedorCard = ({
                                 </div>
                                 <div className="text-center">
                                     <div className="text-gray-600 text-xs">Existentes</div>
-                                    <div className={`font-semibold text-lg p-2 rounded ${existentes > 0 ? 'text-orange-800 bg-orange-100' : 'text-red-800 bg-red-100'}`}>{existentes}</div>
+                                    <div className={`font-semibold text-lg p-2 rounded ${existentesCalculado > 0 ? 'text-orange-800 bg-orange-100' : 'text-red-800 bg-red-100'}`}>{existentesCalculado}</div>
                                 </div>
                             </div>
                             

@@ -173,11 +173,14 @@ const CorteCaja = () => {
         const vendidas = inventarioItem?.fichas_vendidas || 0;
         // Usar stock_actual de la base de datos en lugar de calcular entregadas - vendidas
         const inventarioActual = inventarioItem?.stock_actual ?? (entregadas - vendidas);
+        // ⚠️ CORRECCIÓN: Para mostrar, siempre calcular correctamente: entregadas - vendidas históricas
+        const inventarioCalculado = entregadas - vendidas;
         const precioItem = revendedorSeleccionado.precios?.find(p => p.tipo_ficha_id === tipoId);
         const precio = precioItem?.precio || tipoObj.precio_venta || 0;
         ventasIniciales[tipoNombre] = {
           inventarioMaximo: inventarioActual,
           inventarioActual: inventarioActual,
+          inventarioCalculado: inventarioCalculado, // Para mostrar el cálculo correcto
           entregadas: entregadas,
           vendidas: 0,
           precio: precio
@@ -506,7 +509,7 @@ const CorteCaja = () => {
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                         <div><label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-3">Entregadas</label><div className="p-3 sm:p-4 bg-blue-50 rounded-lg text-center"><p className="text-lg sm:text-xl font-bold text-blue-900">{datos.entregadas}</p></div></div>
-                                        <div><label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-3">Inventario</label><div className="p-3 sm:p-4 bg-gray-50 rounded-lg text-center"><p className="text-lg sm:text-xl font-bold text-gray-900">{datos.inventarioActual}</p></div></div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-3">Inventario</label><div className="p-3 sm:p-4 bg-gray-50 rounded-lg text-center"><p className="text-lg sm:text-xl font-bold text-gray-900">{datos.inventarioCalculado !== undefined ? datos.inventarioCalculado : datos.inventarioActual}</p></div></div>
                                         <div className="col-span-2 sm:col-span-1">
                                             <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-3">Vendidas *</label>
                                             <input type="text" inputMode="numeric" value={datos.vendidas === 0 ? "" : datos.vendidas} onChange={(e) => { if (e.target.value === '' || /^\d+$/.test(e.target.value)) actualizarVentas(tipo, e.target.value); }} onFocus={(e) => e.target.select()} onClick={handleInputTap} onTouchStart={handleInputTap} autoComplete="off" className={`w-full p-3 sm:p-4 border rounded-lg text-center text-lg sm:text-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-all ${errores[tipo] ? 'border-red-400 bg-red-50 ring-2 ring-red-200' : 'border-gray-300 bg-white focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'}`} placeholder="0" />

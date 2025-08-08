@@ -136,7 +136,7 @@ export const tareasService = {
       const response = await apiClient.post('/tareas', datos);
       return {
         success: true,
-        tarea: response.data.tarea,
+        tarea_id: response.data.tarea_id,
         message: response.data.message
       };
     } catch (error) {

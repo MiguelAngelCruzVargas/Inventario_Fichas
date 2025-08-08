@@ -10,21 +10,21 @@ export default defineConfig({
      allowedHosts: ['.loca.lt'],
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
         secure: false,
         timeout: 10000, // 10 segundos timeout
         configure: (proxy, options) => {
-          console.log('Proxy configurado para /api -> http://localhost:3000');
+          console.log('Proxy configurado para /api -> http://localhost:8001');
           
           proxy.on('error', (err, req, res) => {
             console.error('❌ Error en proxy:', err.message);
             console.error('   Request URL:', req.url);
-            console.error('   Target:', 'http://localhost:3000');
+            console.error('   Target:', 'http://localhost:8001');
           });
           
           proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('🔄 Proxy request:', req.method, req.url, '-> http://localhost:3000' + req.url);
+            console.log('🔄 Proxy request:', req.method, req.url, '-> http://localhost:8001' + req.url);
           });
           
           proxy.on('proxyRes', (proxyRes, req, res) => {

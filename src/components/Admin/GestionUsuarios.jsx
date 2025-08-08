@@ -3,13 +3,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Users, Plus, Edit3, Trash2, Eye, EyeOff, Key, Search,
   CheckCircle, XCircle, AlertCircle, Save, X, RefreshCw, Shield, 
-  User, UserCheck, Copy
+  User, UserCheck, Copy, AlertTriangle, Info, Database
 } from 'lucide-react';
 import usuariosService from '../../services/usuariosService';
 import { useUsers } from '../../context/UsersContext';
 import passwordGeneratorService from '../../services/passwordGeneratorService';
 
-// --- Componentes de UI Modulares (Sin cambios) ---
+// --- Componentes de UI Modulares  ---
 
 const Notification = ({ notification, onClose }) => {
     useEffect(() => {
@@ -89,23 +89,169 @@ const CredentialsModal = ({ modalConfig, onClose, onCopy }) => {
 
 const DeleteConfirmationModal = ({ modalConfig, onConfirm, onClose, loading }) => {
     if (!modalConfig.show) return null;
-    return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
-                <div className="text-center">
-                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-                        <AlertCircle className="h-6 w-6 text-red-600" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmar Eliminación</h3>
-                    <p className="text-sm text-gray-600 mb-4">¿Estás seguro de eliminar a <strong className="text-red-600">"{modalConfig.usuario?.username}"</strong>? Esta acción no se puede deshacer.</p>
-                    <div className="flex space-x-3">
-                        <button onClick={onClose} className="flex-1 px-4 py-2 text-sm bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors" disabled={loading}>Cancelar</button>
-                        <button onClick={onConfirm} disabled={loading} className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center">
-                            {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                            {loading ? 'Eliminando...' : 'Eliminar'}
-                        </button>
+    
+    const { usuario, deletionInfo } = modalConfig;
+    
+    if (!deletionInfo) {
+        // Modal simple si no hay información detallada
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+                    <div className="text-center">
+                        <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                            <AlertCircle className="h-6 w-6 text-red-600" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmar Eliminación</h3>
+                        <p className="text-sm text-gray-600 mb-4">¿Estás seguro de eliminar a <strong className="text-red-600">"{usuario?.username}"</strong>? Esta acción no se puede deshacer.</p>
+                        <div className="flex space-x-3">
+                            <button onClick={onClose} className="flex-1 px-4 py-2 text-sm bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors" disabled={loading}>Cancelar</button>
+                            <button onClick={onConfirm} disabled={loading} className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center">
+                                {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                {loading ? 'Eliminando...' : 'Eliminar'}
+                            </button>
+                        </div>
                     </div>
                 </div>
+            </div>
+        );
+    }
+    
+    const { canDelete, warnings, criticalData, recommendations } = deletionInfo;
+    
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-2xl mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="text-center mb-6">
+                    <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4 ${canDelete ? 'bg-yellow-100' : 'bg-red-100'}`}>
+                        {canDelete ? <AlertTriangle className="h-6 w-6 text-yellow-600" /> : <AlertCircle className="h-6 w-6 text-red-600" />}
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        {canDelete ? '⚠️ Eliminación con Pérdida de Datos' : '🚫 Eliminación Bloqueada'}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                        Usuario: <strong className="text-red-600">"{usuario?.username}"</strong> ({usuario?.role})
+                    </p>
+                </div>
+
+                {/* Información crítica */}
+                {Object.keys(criticalData).length > 0 && (
+                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                        <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
+                            <Database className="w-4 h-4 mr-2" />
+                            Datos que se eliminarán permanentemente:
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            {usuario?.role === 'revendedor' && (
+                                <>
+                                    <div className="flex justify-between">
+                                        <span>📦 Inventarios:</span>
+                                        <span className="font-semibold">{criticalData.inventarios || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>🎫 Fichas pendientes:</span>
+                                        <span className="font-semibold text-red-600">{criticalData.fichas_pendientes || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>💰 Ventas registradas:</span>
+                                        <span className="font-semibold">{criticalData.ventas || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>💵 Monto total ventas:</span>
+                                        <span className="font-semibold">${criticalData.monto_total_ventas || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>📋 Entregas:</span>
+                                        <span className="font-semibold">{criticalData.entregas || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>🏦 Cortes de caja:</span>
+                                        <span className="font-semibold">{criticalData.cortes_caja || 0}</span>
+                                    </div>
+                                </>
+                            )}
+                            {usuario?.role === 'trabajador' && (
+                                <>
+                                    <div className="flex justify-between">
+                                        <span>⏳ Tareas pendientes:</span>
+                                        <span className="font-semibold text-red-600">{criticalData.tareas_pendientes || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>✅ Tareas completadas:</span>
+                                        <span className="font-semibold">{criticalData.tareas_completadas || 0}</span>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Advertencias */}
+                {warnings.length > 0 && (
+                    <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <h4 className="font-semibold text-yellow-800 mb-3 flex items-center">
+                            <AlertTriangle className="w-4 h-4 mr-2" />
+                            Advertencias importantes:
+                        </h4>
+                        <ul className="text-sm text-yellow-700 space-y-1">
+                            {warnings.map((warning, index) => (
+                                <li key={index} className="flex items-start">
+                                    <span className="mr-2">•</span>
+                                    {warning}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                {/* Recomendaciones */}
+                {recommendations.length > 0 && (
+                    <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
+                            <Info className="w-4 h-4 mr-2" />
+                            Recomendaciones:
+                        </h4>
+                        <ul className="text-sm text-blue-700 space-y-1">
+                            {recommendations.map((recommendation, index) => (
+                                <li key={index} className="flex items-start">
+                                    <span className="mr-2">💡</span>
+                                    {recommendation}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                {/* Botones */}
+                <div className="flex space-x-3">
+                    <button 
+                        onClick={onClose} 
+                        className="flex-1 px-4 py-2 text-sm bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors" 
+                        disabled={loading}
+                    >
+                        Cancelar
+                    </button>
+                    
+                    {canDelete ? (
+                        <button 
+                            onClick={onConfirm} 
+                            disabled={loading} 
+                            className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+                        >
+                            {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                            {loading ? 'Eliminando...' : 'Eliminar Definitivamente'}
+                        </button>
+                    ) : (
+                        <div className="flex-1 px-4 py-2 text-sm bg-gray-100 text-gray-500 rounded-lg text-center">
+                            Eliminación Bloqueada
+                        </div>
+                    )}
+                </div>
+                
+                {canDelete && (
+                    <p className="text-xs text-gray-500 text-center mt-3">
+                        ⚠️ Esta acción es irreversible. Todo el historial se perderá para siempre.
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -395,6 +541,7 @@ const GestionUsuarios = () => {
     
     const [usuarios, setUsuarios] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(''); // Estado para manejar errores
     const [filtro, setFiltro] = useState('');
     const [filtroRole, setFiltroRole] = useState('');
     const [filtroEstado, setFiltroEstado] = useState(''); // '' = todos, 'activo' = solo activos, 'inactivo' = solo inactivos
@@ -402,24 +549,89 @@ const GestionUsuarios = () => {
     const [usuarioEditando, setUsuarioEditando] = useState(null);
     const [notification, setNotification] = useState({ show: false, message: '', type: '' });
     const [modalCredenciales, setModalCredenciales] = useState({ show: false, usuario: '', password: '', nombre: '' });
-    const [modalEliminar, setModalEliminar] = useState({ show: false, usuario: null });
-    const [errorModal, setErrorModal] = useState({ show: false, message: '' });
+    const [modalEliminar, setModalEliminar] = useState({ show: false, usuario: null, deletionInfo: null });
 
-    const cargarUsuarios = useCallback(async () => {
-        setLoading(true);
+    // Función para abrir modal de eliminación con vista previa
+    const abrirModalEliminacion = async (usuario) => {
         try {
-            const result = await usuariosService.obtenerUsuarios();
-            setUsuarios(result.success ? result.data : []);
-            if (!result.success) mostrarNotificacion(result.error, 'error');
+            setLoading(true);
+            
+            // Obtener información detallada antes de mostrar el modal
+            const result = await usuariosService.obtenerVistaEliminacion(usuario.id);
+            
+            if (result.success) {
+                setModalEliminar({ 
+                    show: true, 
+                    usuario: usuario,
+                    deletionInfo: result.data 
+                });
+            } else {
+                // Si hay error, mostrar modal simple
+                setModalEliminar({ 
+                    show: true, 
+                    usuario: usuario,
+                    deletionInfo: null 
+                });
+                console.error('Error al obtener vista previa:', result.error);
+            }
         } catch (error) {
-            mostrarNotificacion('Error al cargar usuarios', 'error');
+            console.error('Error al abrir modal de eliminación:', error);
+            // Modal simple en caso de error
+            setModalEliminar({ 
+                show: true, 
+                usuario: usuario,
+                deletionInfo: null 
+            });
         } finally {
             setLoading(false);
         }
-    }, []);
+    };
+    const [errorModal, setErrorModal] = useState({ show: false, message: '' });
 
+    // Sistema de carga optimizado con retry integrado en el servicio
+    const cargarUsuarios = useCallback(async () => {
+        try {
+            setLoading(true);
+            console.log('🔄 Iniciando carga de usuarios...');
+            
+            // El servicio ya maneja el retry automático para throttling
+            const result = await usuariosService.obtenerUsuarios();
+            
+            if (result.success) {
+                setUsuarios(result.data);
+                setError(''); // Limpiar errores previos
+                console.log(`✅ Usuarios cargados exitosamente: ${result.data.length} usuarios`);
+                
+                // Opcional: Mostrar notificación de éxito solo si había error previo
+                if (error) {
+                    mostrarNotificacion('✅ Usuarios cargados exitosamente', 'success');
+                }
+            } else {
+                // El servicio ya manejó los retries, este es el error final
+                setError(result.error);
+                mostrarNotificacion(result.error, 'error');
+                console.error('❌ Error final al cargar usuarios:', result.error);
+                
+                // En caso de error, mantener lista vacía para evitar crashes
+                setUsuarios([]);
+            }
+        } catch (error) {
+            console.error('❌ Error inesperado al cargar usuarios:', error);
+            setError('Error inesperado al cargar usuarios');
+            mostrarNotificacion('Error inesperado al cargar usuarios', 'error');
+            setUsuarios([]);
+        } finally {
+            setLoading(false);
+        }
+    }, []); // Sin dependencias ya que solo usa funciones estables
+
+    // Carga inicial con delay para evitar conflictos con otras cargas
     useEffect(() => {
-        cargarUsuarios();
+        const timeout = setTimeout(() => {
+            cargarUsuarios();
+        }, 150); // Pequeño delay para evitar colisiones con otras peticiones
+
+        return () => clearTimeout(timeout);
     }, [cargarUsuarios]);
 
     const mostrarNotificacion = (message, type = 'success') => {
@@ -497,12 +709,19 @@ const GestionUsuarios = () => {
                 }
                 mostrarNotificacion(isEditing ? 'Usuario actualizado' : 'Usuario creado', 'success');
                 setIsFormOpen(false);
-                cargarUsuarios();
+                
+                // Usar sistema de tiempo real en lugar de cargar directamente
+                console.log('🚀 Activando actualizaciones en tiempo real tras guardar usuario...');
                 
                 // Notificar a los contextos para que otras partes de la app se actualicen
                 if (formData.role === 'trabajador') notifyTrabajadoresChanged();
                 if (formData.role === 'revendedor') notifyRevendedoresChanged();
                 notifyUsersChanged();
+                
+                // Recargar lista local con delay pequeño para evitar conflictos
+                setTimeout(() => {
+                    cargarUsuarios();
+                }, 300);
             } else {
                 mostrarNotificacion(result.error, 'error');
             }
@@ -519,13 +738,26 @@ const GestionUsuarios = () => {
             const result = await usuariosService.toggleEstadoUsuario(usuario.id);
             
             if (result.success) {
+                // Mostrar mensaje principal
                 mostrarNotificacion(result.data.message, 'success');
-                cargarUsuarios();
                 
-                // Notificar a los contextos
+                // Si hay advertencia de stock, mostrarla como notificación adicional
+                if (result.data.warning) {
+                    setTimeout(() => {
+                        mostrarNotificacion(result.data.warning, 'warning');
+                    }, 1000);
+                }
+                
+                // Usar sistema de tiempo real
+                console.log('🔄 Activando actualizaciones tras cambio de estado...');
                 if (usuario.role === 'trabajador') notifyTrabajadoresChanged();
                 if (usuario.role === 'revendedor') notifyRevendedoresChanged();
                 notifyUsersChanged();
+                
+                // Recargar con delay
+                setTimeout(() => {
+                    cargarUsuarios();
+                }, 200);
             } else {
                 setErrorModal({ 
                     show: true, 
@@ -558,16 +790,22 @@ const GestionUsuarios = () => {
 
             if (result.success) {
                 mostrarNotificacion('Usuario eliminado exitosamente', 'success');
-                cargarUsuarios();
                 
+                // Usar sistema de tiempo real
+                console.log('🗑️ Activando actualizaciones tras eliminación...');
                 if (usuarioAEliminar.role === 'trabajador') notifyTrabajadoresChanged();
                 if (usuarioAEliminar.role === 'revendedor') notifyRevendedoresChanged();
                 notifyUsersChanged();
                 
-                setModalEliminar({ show: false, usuario: null });
+                setModalEliminar({ show: false, usuario: null, deletionInfo: null });
+                
+                // Recargar con delay
+                setTimeout(() => {
+                    cargarUsuarios();
+                }, 200);
             } else {
                 // Mostrar el error en un modal elegante en lugar de notificación
-                setModalEliminar({ show: false, usuario: null });
+                setModalEliminar({ show: false, usuario: null, deletionInfo: null });
                 setErrorModal({ 
                     show: true, 
                     message: result.error || 'Error desconocido al eliminar usuario' 
@@ -575,7 +813,7 @@ const GestionUsuarios = () => {
             }
         } catch (error) {
             console.debug('Error inesperado al eliminar usuario:', error);
-            setModalEliminar({ show: false, usuario: null });
+            setModalEliminar({ show: false, usuario: null, deletionInfo: null });
             setErrorModal({ 
                 show: true, 
                 message: 'Error inesperado al comunicarse con el servidor. Por favor intenta de nuevo.' 
@@ -696,9 +934,10 @@ const GestionUsuarios = () => {
                                                     {usuario.active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
                                                 <button 
-                                                    onClick={() => setModalEliminar({ show: true, usuario })} 
+                                                    onClick={() => abrirModalEliminacion(usuario)} 
                                                     className="p-2 text-red-600 hover:bg-red-100 rounded-lg" 
                                                     title="Eliminar"
+                                                    disabled={loading}
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -714,7 +953,7 @@ const GestionUsuarios = () => {
 
             <UserFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} usuarioEditando={usuarioEditando} onSave={guardarUsuario} loading={loading} showNotification={mostrarNotificacion} />
             <CredentialsModal modalConfig={modalCredenciales} onClose={() => setModalCredenciales({ show: false })} onCopy={(text) => navigator.clipboard.writeText(text).then(() => mostrarNotificacion('Copiado al portapapeles'))} />
-            <DeleteConfirmationModal modalConfig={modalEliminar} onConfirm={confirmarEliminacion} onClose={() => setModalEliminar({ show: false })} loading={loading} />
+            <DeleteConfirmationModal modalConfig={modalEliminar} onConfirm={confirmarEliminacion} onClose={() => setModalEliminar({ show: false, usuario: null, deletionInfo: null })} loading={loading} />
             <ErrorModal errorModal={errorModal} onClose={() => setErrorModal({ show: false, message: '' })} />
         </div>
     );

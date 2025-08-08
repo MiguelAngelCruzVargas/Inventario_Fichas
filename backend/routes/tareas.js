@@ -128,13 +128,19 @@ router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
       FROM tareas_mantenimiento t
       LEFT JOIN revendedores r ON t.revendedor_id = r.id
       LEFT JOIN usuarios u_revendedor ON r.usuario_id = u_revendedor.id
-      LEFT JOIN usuarios u_trabajador ON t.trabajador_id = u_trabajador.id
-      LEFT JOIN trabajadores_mantenimiento tm ON u_trabajador.id = tm.usuario_id
+      LEFT JOIN trabajadores_mantenimiento tm ON t.trabajador_id = tm.id
+      LEFT JOIN usuarios u_trabajador ON tm.usuario_id = u_trabajador.id
       ORDER BY 
         CASE t.estado WHEN 'Pendiente' THEN 1 ELSE 2 END,
         CASE t.prioridad WHEN 'Urgente' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END,
         t.fecha_vencimiento ASC
     `);
+    
+    console.log(`📋 Consulta de tareas obtuvo ${tareas.length} resultados`);
+    if (tareas.length > 0) {
+      console.log('Primera tarea como ejemplo:', tareas[0]);
+    }
+    
     res.json({ success: true, tareas });
   } catch (error) {
     console.error('❌ ERROR al obtener tareas:', error);
@@ -189,9 +195,16 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
       INSERT INTO tareas_mantenimiento 
       (revendedor_id, trabajador_id, titulo, descripcion, prioridad, fecha_asignacion, fecha_vencimiento, created_by) 
       VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?)
-    `, [revendedor_id, usuarioIdTrabajador, titulo, descripcion, prioridad, fecha_vencimiento, req.user?.id || 1]);
+    `, [revendedor_id, trabajador_id, titulo, descripcion, prioridad, fecha_vencimiento, req.user?.id || 1]);
 
     console.log('✅ Tarea creada exitosamente con ID:', result.insertId);
+    
+    // Verificar que se insertó correctamente
+    if (result.insertId === 0 || !result.insertId) {
+      console.error('❌ ERROR: El ID insertado es 0 o inválido. Resultado completo:', result);
+      return res.status(500).json({ success: false, error: 'Error al crear la tarea - ID inválido' });
+    }
+    
     res.status(201).json({ success: true, message: 'Tarea creada exitosamente', tarea_id: result.insertId });
   } catch (error) {
     console.error('❌ ERROR al crear tarea:', error);
@@ -230,13 +243,24 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
   console.log(`🗑️ DELETE /api/tareas/${id} - Iniciando eliminación de tarea`);
 
   try {
-      const resultado = await query(`DELETE FROM tareas_mantenimiento WHERE id = ?`, [id]);
+      // Primero verificar que la tarea existe
+      const tareaExiste = await query(`SELECT id, titulo FROM tareas_mantenimiento WHERE id = ?`, [id]);
       
-      if (resultado.affectedRows === 0) {
+      if (tareaExiste.length === 0) {
+          console.log(`❌ Tarea con ID ${id} no encontrada`);
           return res.status(404).json({ success: false, message: 'Tarea no encontrada.' });
       }
       
-      console.log(`✅ Tarea eliminada con ID: ${id}`);
+      console.log(`📋 Tarea encontrada: "${tareaExiste[0].titulo}" - Procediendo a eliminar...`);
+      
+      const resultado = await query(`DELETE FROM tareas_mantenimiento WHERE id = ?`, [id]);
+      
+      if (resultado.affectedRows === 0) {
+          console.log(`❌ No se pudo eliminar la tarea con ID ${id}`);
+          return res.status(404).json({ success: false, message: 'No se pudo eliminar la tarea.' });
+      }
+      
+      console.log(`✅ Tarea eliminada exitosamente - ID: ${id}, Filas afectadas: ${resultado.affectedRows}`);
       res.json({ success: true, message: 'Tarea eliminada exitosamente' });
 
   } catch (error) {
@@ -331,6 +355,9 @@ router.get('/mis-tareas', authenticateToken, requireRole(['trabajador']), async 
 
     console.log(`✅ Trabajador validado: ${trabajador[0].nombre_completo}`);
 
+    const trabajadorId = trabajador[0].id; // Usar el ID del trabajador, no del usuario
+    console.log(`🔍 Buscando tareas para trabajador ID: ${trabajadorId}`);
+
     const tareas = await query(`
       SELECT 
         t.*,
@@ -342,8 +369,7 @@ router.get('/mis-tareas', authenticateToken, requireRole(['trabajador']), async 
         u.nombre_completo as creado_por_nombre
       FROM tareas_mantenimiento t
       LEFT JOIN revendedores r ON t.revendedor_id = r.id
-      LEFT JOIN usuarios u_trabajador ON t.trabajador_id = u_trabajador.id
-      LEFT JOIN trabajadores_mantenimiento tm ON u_trabajador.id = tm.usuario_id
+      LEFT JOIN trabajadores_mantenimiento tm ON t.trabajador_id = tm.id
       LEFT JOIN usuarios u ON t.created_by = u.id
       WHERE t.trabajador_id = ?
       ORDER BY 
@@ -353,7 +379,7 @@ router.get('/mis-tareas', authenticateToken, requireRole(['trabajador']), async 
           ELSE 3
         END,
         t.fecha_vencimiento ASC
-    `, [usuarioId]); // Ahora usamos directamente usuarioId
+    `, [trabajadorId]); // Usar el ID del trabajador de la tabla trabajadores_mantenimiento
 
     console.log(`📋 ${tareas.length} tareas encontradas para el trabajador`);
     res.json({ success: true, tareas });
@@ -361,49 +387,6 @@ router.get('/mis-tareas', authenticateToken, requireRole(['trabajador']), async 
   } catch (error) {
     console.error('❌ ERROR al obtener mis tareas:', error);
     res.status(500).json({ success: false, error: 'Error interno del servidor al obtener tareas' });
-  }
-});
-
-// ACTUALIZAR ESTADO DE MI TAREA (PARA TRABAJADORES)
-router.put('/mis-tareas/:id/estado', authenticateToken, requireRole(['trabajador']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { estado, notas = '' } = req.body;
-    const usuarioId = req.user.id;
-
-    // Validar que la tarea pertenece al trabajador
-    const tarea = await query(`
-      SELECT * FROM tareas_mantenimiento 
-      WHERE id = ? AND trabajador_id = ?
-    `, [id, usuarioId]);
-
-    if (tarea.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Tarea no encontrada o no tienes permisos para modificarla' 
-      });
-    }
-
-    if (!['Pendiente', 'En Progreso', 'Completado'].includes(estado)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Estado inválido' 
-      });
-    }
-
-    const fechaCompletado = estado === 'Completado' ? new Date() : null;
-
-    await query(`
-      UPDATE tareas_mantenimiento 
-      SET estado = ?, notas = ?, fecha_completado = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [estado, notas, fechaCompletado, id]);
-
-    res.json({ success: true, message: 'Estado de tarea actualizado exitosamente' });
-
-  } catch (error) {
-    console.error('❌ ERROR al actualizar estado de mi tarea:', error);
-    res.status(500).json({ success: false, error: 'Error interno del servidor' });
   }
 });
 

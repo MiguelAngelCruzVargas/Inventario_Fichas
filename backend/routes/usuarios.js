@@ -3,6 +3,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import { db } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
+import { query } from '../database.js';
 
 const router = express.Router();
 
@@ -233,7 +234,7 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 
       if (role === 'trabajador') {
         console.log('🔧 Creando registro de trabajador...');
-        await db.execute(
+        const [trabajadorResult] = await db.execute(
           `INSERT INTO trabajadores_mantenimiento (
             usuario_id, 
             nombre_completo, 
@@ -252,7 +253,8 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
           ]
         );
         
-        console.log('✅ Trabajador creado en trabajadores_mantenimiento con ID:', userId);
+        const trabajadorId = trabajadorResult.insertId;
+        console.log(`✅ Trabajador creado en trabajadores_mantenimiento con ID: ${trabajadorId} (usuario_id: ${userId})`);
       }
 
       // Para admin, no se necesita tabla adicional
@@ -551,6 +553,131 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
   }
 });
 
+// Vista previa de eliminación - obtener información detallada antes de eliminar
+router.get('/:id/deletion-preview', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔍 Obteniendo vista previa de eliminación para usuario ${id}...`);
+
+    // Obtener información del usuario
+    const [userInfo] = await db.execute('SELECT username, COALESCE(role, tipo_usuario) as role FROM usuarios WHERE id = ?', [id]);
+    
+    if (userInfo.length === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const user = userInfo[0];
+    const deletionInfo = {
+      user: user,
+      canDelete: true,
+      warnings: [],
+      criticalData: {},
+      recommendations: []
+    };
+
+    if (user.role === 'trabajador') {
+      // Primero obtener el trabajador_id basado en el usuario_id
+      const [trabajadorInfo] = await db.execute(
+        'SELECT id as trabajador_id FROM trabajadores_mantenimiento WHERE usuario_id = ?', 
+        [id]
+      );
+      
+      if (trabajadorInfo.length > 0) {
+        const trabajadorId = trabajadorInfo[0].trabajador_id;
+        
+        // Verificar tareas pendientes
+        const [tareasAsignadas] = await db.execute(
+          'SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ? AND estado IN ("Pendiente", "En Progreso")', 
+          [trabajadorId]
+        );
+        
+        const [tareasCompletadas] = await db.execute(
+          'SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ? AND estado = "Completado"', 
+          [trabajadorId]
+        );
+        
+        deletionInfo.criticalData = {
+          tareas_pendientes: tareasAsignadas[0].count,
+          tareas_completadas: tareasCompletadas[0].count
+        };
+        
+        if (tareasAsignadas[0].count > 0) {
+          deletionInfo.canDelete = false;
+          deletionInfo.warnings.push(`Tiene ${tareasAsignadas[0].count} tareas pendientes asignadas`);
+          deletionInfo.recommendations.push('Complete o reasigne las tareas primero');
+        }
+        
+        if (tareasCompletadas[0].count > 0) {
+          deletionInfo.warnings.push(`Se perderá el historial de ${tareasCompletadas[0].count} tareas completadas`);
+        }
+      }
+
+    } else if (user.role === 'revendedor') {
+      // Obtener información completa del revendedor
+      const [revendedorInfo] = await db.execute(`
+        SELECT 
+          r.*,
+          (SELECT COUNT(*) FROM inventarios WHERE revendedor_id = r.id) as total_inventarios,
+          (SELECT COALESCE(SUM(stock_actual), 0) FROM inventarios WHERE revendedor_id = r.id) as fichas_pendientes,
+          (SELECT COUNT(*) FROM ventas WHERE revendedor_id = r.id) as total_ventas,
+          (SELECT COALESCE(SUM(monto_total), 0) FROM ventas WHERE revendedor_id = r.id) as monto_total_ventas,
+          (SELECT COUNT(*) FROM entregas WHERE revendedor_id = r.id) as total_entregas,
+          (SELECT COUNT(*) FROM cortes_caja WHERE usuario_id = r.usuario_id) as total_cortes_caja,
+          (SELECT COALESCE(SUM(total_revendedores), 0) FROM cortes_caja WHERE usuario_id = r.usuario_id) as monto_total_cortes
+        FROM revendedores r 
+        WHERE r.usuario_id = ?
+      `, [id]);
+      
+      if (revendedorInfo.length > 0) {
+        const info = revendedorInfo[0];
+        deletionInfo.criticalData = {
+          inventarios: info.total_inventarios,
+          fichas_pendientes: info.fichas_pendientes,
+          ventas: info.total_ventas,
+          monto_total_ventas: info.monto_total_ventas,
+          entregas: info.total_entregas,
+          cortes_caja: info.total_cortes_caja,
+          monto_total_cortes: info.monto_total_cortes
+        };
+        
+        // Verificar datos críticos
+        if (info.fichas_pendientes > 0) {
+          deletionInfo.canDelete = false;
+          deletionInfo.warnings.push(`Tiene ${info.fichas_pendientes} fichas pendientes en inventario`);
+          deletionInfo.recommendations.push('Recupere o reasigne las fichas pendientes');
+        }
+        
+        if (info.total_ventas > 0) {
+          deletionInfo.warnings.push(`Se perderá el historial de ${info.total_ventas} ventas por $${info.monto_total_ventas}`);
+          deletionInfo.recommendations.push('Considere exportar reportes de ventas antes de eliminar');
+        }
+        
+        if (info.total_cortes_caja > 0) {
+          deletionInfo.warnings.push(`Se perderá el historial de ${info.total_cortes_caja} cortes de caja por $${info.monto_total_cortes}`);
+          deletionInfo.recommendations.push('Exporte reportes de cortes de caja antes de eliminar');
+        }
+        
+        if (info.total_entregas > 0) {
+          deletionInfo.warnings.push(`Se perderá el registro de ${info.total_entregas} entregas realizadas`);
+        }
+      }
+    }
+    
+    // Protección del admin principal
+    if (user.username === 'admin' || (user.role === 'admin' && id == '1')) {
+      deletionInfo.canDelete = false;
+      deletionInfo.warnings.push('Es el usuario administrador principal del sistema');
+      deletionInfo.recommendations.push('Este usuario no se puede eliminar por seguridad');
+    }
+
+    res.json(deletionInfo);
+
+  } catch (error) {
+    console.error('Error al obtener vista previa de eliminación:', error);
+    res.status(500).json({ message: 'Error al obtener información de eliminación: ' + error.message });
+  }
+});
+
 // Eliminar usuario
 router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
@@ -579,30 +706,125 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
 
     // VERIFICAR TAREAS PENDIENTES ANTES DE ELIMINAR TRABAJADOR
     if (user.role === 'trabajador') {
-      const [tareasAsignadas] = await db.execute(
-        'SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ? AND estado IN ("Pendiente", "En Progreso")', 
+      // Primero obtener el trabajador_id basado en el usuario_id
+      const [trabajadorInfo] = await db.execute(
+        'SELECT id as trabajador_id FROM trabajadores_mantenimiento WHERE usuario_id = ?', 
         [id]
       );
       
-      if (tareasAsignadas[0].count > 0) {
-        console.log(`⚠️ Usuario ${user.username} tiene ${tareasAsignadas[0].count} tareas pendientes`);
-        return res.status(400).json({ 
-          message: `No se puede eliminar el trabajador porque tiene ${tareasAsignadas[0].count} tareas pendientes asignadas. Complete o reasigne las tareas primero.` 
-        });
+      if (trabajadorInfo.length > 0) {
+        const trabajadorId = trabajadorInfo[0].trabajador_id;
+        
+        const [tareasAsignadas] = await db.execute(
+          'SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ? AND estado IN ("Pendiente", "En Progreso")', 
+          [trabajadorId]
+        );
+        
+        if (tareasAsignadas[0].count > 0) {
+          console.log(`⚠️ Usuario ${user.username} tiene ${tareasAsignadas[0].count} tareas pendientes`);
+          return res.status(400).json({ 
+            message: `No se puede eliminar el trabajador porque tiene ${tareasAsignadas[0].count} tareas pendientes asignadas. Complete o reasigne las tareas primero.` 
+          });
+        }
       }
     }
 
-    // Ahora que tenemos CASCADE DELETE en las foreign keys, podemos eliminar directamente
-    // La base de datos se encarga automáticamente de eliminar registros relacionados
-    console.log('Eliminando usuario (CASCADE automático)...');
-    const [userDeleteResult] = await db.execute('DELETE FROM usuarios WHERE id = ?', [id]);
-    console.log(`Filas eliminadas de usuarios: ${userDeleteResult.affectedRows}`);
+    // Usar CASCADE DELETE automático para trabajadores y otros roles
+    let eliminationResult;
+    
+    if (user.role === 'revendedor') {
+      console.log(`🏪 Eliminando revendedor con eliminación en cascada completa...`);
+      
+      // 1. OBTENER INFORMACIÓN DETALLADA ANTES DE ELIMINAR
+      console.log('📊 Obteniendo información detallada del revendedor...');
+      
+      const [revendedorInfo] = await db.execute(`
+        SELECT 
+          r.*,
+          (SELECT COUNT(*) FROM inventarios WHERE revendedor_id = r.id) as total_inventarios,
+          (SELECT COALESCE(SUM(stock_actual), 0) FROM inventarios WHERE revendedor_id = r.id) as fichas_pendientes,
+          (SELECT COUNT(*) FROM ventas WHERE revendedor_id = r.id) as total_ventas,
+          (SELECT COALESCE(SUM(monto_total), 0) FROM ventas WHERE revendedor_id = r.id) as monto_total_ventas,
+          (SELECT COUNT(*) FROM entregas WHERE revendedor_id = r.id) as total_entregas,
+          (SELECT COUNT(*) FROM cortes_caja WHERE usuario_id = r.usuario_id) as total_cortes_caja
+        FROM revendedores r 
+        WHERE r.usuario_id = ?
+      `, [id]);
+      
+      if (revendedorInfo.length === 0) {
+        console.log('⚠️ No se encontró información del revendedor en la tabla específica');
+      } else {
+        const info = revendedorInfo[0];
+        console.log('📋 INFORMACIÓN DEL REVENDEDOR A ELIMINAR:');
+        console.log(`  - Inventarios: ${info.total_inventarios}`);
+        console.log(`  - Fichas pendientes: ${info.fichas_pendientes}`);
+        console.log(`  - Ventas realizadas: ${info.total_ventas}`);
+        console.log(`  - Monto total vendido: $${info.monto_total_ventas}`);
+        console.log(`  - Entregas: ${info.total_entregas}`);
+        console.log(`  - Cortes de caja: ${info.total_cortes_caja}`);
+        
+        // VALIDACIÓN ESTRICTA: No permitir eliminación si hay datos importantes
+        const hasImportantData = 
+          info.fichas_pendientes > 0 || 
+          info.total_ventas > 0 || 
+          info.total_entregas > 0 || 
+          info.total_cortes_caja > 0;
+          
+        if (hasImportantData) {
+          const issues = [];
+          if (info.fichas_pendientes > 0) issues.push(`${info.fichas_pendientes} fichas pendientes`);
+          if (info.total_ventas > 0) issues.push(`${info.total_ventas} ventas registradas`);
+          if (info.total_entregas > 0) issues.push(`${info.total_entregas} entregas realizadas`);
+          if (info.total_cortes_caja > 0) issues.push(`${info.total_cortes_caja} cortes de caja`);
+          
+          console.log(`🚨 ELIMINACIÓN BLOQUEADA - El revendedor tiene datos importantes:`);
+          issues.forEach(issue => console.log(`  - ${issue}`));
+          
+          return res.status(400).json({ 
+            message: `⚠️ ELIMINACIÓN BLOQUEADA: Este revendedor tiene historial importante que se perdería permanentemente:
 
-    if (userDeleteResult.affectedRows === 0) {
+📊 DATOS QUE SE ELIMINARÍAN:
+${issues.map(issue => `• ${issue}`).join('\n')}
+
+💡 RECOMENDACIONES:
+• Si ya no vende: DESACTÍVALO temporalmente (botón del ojo)
+• Si necesitas eliminar: Exporta reportes primero
+• Si tiene fichas pendientes: Recupéralas o reasígnalas
+
+❌ La eliminación permanente borrará TODO el historial y no se puede recuperar.`,
+            type: 'DELETION_BLOCKED_DATA_LOSS',
+            data: {
+              revendedor_info: info,
+              issues: issues
+            }
+          });
+        }
+      }
+      
+      // Si llegamos aquí, el revendedor no tiene datos críticos, proceder con eliminación CASCADE
+      console.log('🗑️ Eliminando revendedor con CASCADE DELETE automático...');
+      eliminationResult = await query(`DELETE FROM usuarios WHERE id = ?`, [id]);
+      console.log(`✅ Usuario revendedor eliminado con CASCADE DELETE: ${id}`);
+      
+    } else {
+      // Trabajadores, admins y otros roles - eliminación directa con CASCADE
+      console.log('🗑️ Eliminando usuario con CASCADE DELETE automático...');
+      
+      // Para trabajadores, limpiar tareas manualmente (temporal hasta configurar CASCADE)
+      if (user.role === 'trabajador') {
+        const tareasResult = await query(`DELETE FROM tareas_mantenimiento WHERE trabajador_id = ?`, [id]);
+        console.log(`✅ ${tareasResult.affectedRows} tareas del trabajador eliminadas`);
+      }
+      
+      eliminationResult = await query(`DELETE FROM usuarios WHERE id = ?`, [id]);
+      console.log(`✅ Usuario eliminado con CASCADE DELETE: ${id}`);
+    }
+
+    if (eliminationResult.affectedRows === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
     
-    console.log(`Usuario ${user.username} eliminado exitosamente con CASCADE automático`);
+    console.log(`Usuario ${user.username} eliminado exitosamente`);
     res.json({ message: 'Usuario eliminado exitosamente' });
 
   } catch (error) {
@@ -766,6 +988,23 @@ router.patch('/:id/toggle-active', authenticateToken, requireRole(['admin']), as
       }
     }
 
+    // Si se está desactivando un revendedor, informar sobre stock pero permitir desactivación
+    let stockWarning = null;
+    if (newActiveState === 0 && role === 'revendedor') {
+      const [inventariosAsignados] = await db.execute(
+        'SELECT COUNT(*) as count, SUM(stock_actual) as total_fichas FROM inventarios WHERE revendedor_id = ? AND stock_actual > 0', 
+        [id]
+      );
+      
+      if (inventariosAsignados[0].count > 0 && inventariosAsignados[0].total_fichas > 0) {
+        stockWarning = {
+          inventarios: inventariosAsignados[0].count,
+          fichas_pendientes: inventariosAsignados[0].total_fichas
+        };
+        console.log(`⚠️ ADVERTENCIA: Revendedor ${username} tiene ${inventariosAsignados[0].total_fichas} fichas en ${inventariosAsignados[0].count} inventarios`);
+      }
+    }
+
     // Actualizar estado en tabla usuarios
     await db.execute('UPDATE usuarios SET activo = ? WHERE id = ?', [newActiveState, id]);
     console.log(`✅ Estado actualizado en tabla usuarios para ${username}`);
@@ -800,11 +1039,20 @@ router.patch('/:id/toggle-active', authenticateToken, requireRole(['admin']), as
     const statusText = newActiveState === 1 ? 'ACTIVADO' : 'DESACTIVADO';
     console.log(`🎉 Usuario ${username} ${statusText} exitosamente`);
     
-    res.json({ 
+    // Preparar respuesta con información de stock si aplica
+    const response = { 
       success: true,
       message: `Usuario ${username} ${statusText.toLowerCase()} exitosamente`,
       newState: newActiveState === 1
-    });
+    };
+
+    // Agregar advertencia de stock si existe
+    if (stockWarning) {
+      response.warning = `⚠️ IMPORTANTE: Este revendedor tiene ${stockWarning.fichas_pendientes} fichas pendientes en ${stockWarning.inventarios} inventario(s). Asegúrate de recuperar o reasignar las fichas antes de hacer cambios permanentes.`;
+      response.stock_info = stockWarning;
+    }
+    
+    res.json(response);
 
   } catch (error) {
     console.error('❌ Error al alternar estado de usuario:', error);

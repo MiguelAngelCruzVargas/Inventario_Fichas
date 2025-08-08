@@ -24,6 +24,22 @@ import {
 // Asegúrate de que la ruta a tu contexto sea la correcta
 import { useFichas } from '../../context/FichasContext';
 
+// Función para truncar texto de forma inteligente
+const truncateText = (text, maxLength = 30) => {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  
+  // Intentar cortar en un espacio si es posible
+  const truncated = text.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  
+  if (lastSpace > maxLength * 0.7) {
+    return truncated.substring(0, lastSpace) + '...';
+  }
+  
+  return truncated + '...';
+};
+
 // Componente de formulario reutilizable - FUERA del componente principal
 const FormularioNuevaTarea = ({ 
   nuevaTarea, 
@@ -35,40 +51,83 @@ const FormularioNuevaTarea = ({
   isMobile = false 
 }) => (
   <div className="space-y-4">
-    <select 
-      value={nuevaTarea.revendedorId || ''} 
-      onChange={(e) => setNuevaTarea({...nuevaTarea, revendedorId: e.target.value})} 
-      className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors bg-white text-sm"
-    >
-      <option value="">🏢 Seleccionar cliente</option>
-      {(revendedores || []).map(r => <option key={r.id} value={r.id}>{r.nombre_negocio || r.nombre}</option>)}
-    </select>
-    <select 
-      value={nuevaTarea.trabajadorId || ''} 
-      onChange={(e) => setNuevaTarea({...nuevaTarea, trabajadorId: e.target.value})} 
-      className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors bg-white text-sm"
-    >
-      <option value="">👨‍🔧 Asignar a técnico</option>
-      {(trabajadores || []).map(t => <option key={t.id} value={t.id}>{t.nombre_completo}{t.especialidad ? ` - ${t.especialidad}` : ''}</option>)}
-    </select>
+    {/* Selector de Cliente */}
+    <div className="relative">
+      <select 
+        value={nuevaTarea.revendedorId || ''} 
+        onChange={(e) => setNuevaTarea({...nuevaTarea, revendedorId: e.target.value})} 
+        className="w-full px-3 py-3 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white text-sm appearance-none cursor-pointer hover:border-blue-300 hover:shadow-sm focus:shadow-md overflow-hidden text-ellipsis whitespace-nowrap"
+        style={{ 
+          minHeight: '44px', // Mejorar accesibilidad en móvil
+          backgroundImage: 'none' // Quitar arrow por defecto
+        }}
+        title={nuevaTarea.revendedorId ? (revendedores || []).find(r => r.id == nuevaTarea.revendedorId)?.nombre_negocio || 'Cliente seleccionado' : 'Seleccionar cliente'}
+      >
+        <option value="">🏢 Seleccionar cliente</option>
+        {(revendedores || []).map(r => {
+          const nombre = r.nombre_negocio || r.nombre;
+          return (
+            <option key={r.id} value={r.id} title={nombre}>
+              {isMobile ? truncateText(nombre, 20) : truncateText(nombre, 40)}
+            </option>
+          );
+        })}
+      </select>
+      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200" />
+    </div>
+
+    {/* Selector de Trabajador */}
+    <div className="relative">
+      <select 
+        value={nuevaTarea.trabajadorId || ''} 
+        onChange={(e) => setNuevaTarea({...nuevaTarea, trabajadorId: e.target.value})} 
+        className="w-full px-3 py-3 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white text-sm appearance-none cursor-pointer hover:border-blue-300 hover:shadow-sm focus:shadow-md overflow-hidden text-ellipsis whitespace-nowrap"
+        style={{ 
+          minHeight: '44px', // Mejorar accesibilidad en móvil
+          backgroundImage: 'none' // Quitar arrow por defecto
+        }}
+        title={nuevaTarea.trabajadorId ? (trabajadores || []).find(t => t.id == nuevaTarea.trabajadorId)?.nombre_completo : 'Asignar a técnico'}
+      >
+        <option value="">👨‍🔧 Asignar a técnico</option>
+        {(trabajadores || []).map(t => {
+          const displayName = t.especialidad ? `${t.nombre_completo} - ${t.especialidad}` : t.nombre_completo;
+          return (
+            <option key={t.id} value={t.id} title={displayName}>
+              {isMobile ? truncateText(displayName, 20) : truncateText(displayName, 40)}
+            </option>
+          );
+        })}
+      </select>
+      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200" />
+    </div>
     
-    <div className={`grid ${isMobile ? 'grid-cols-2 gap-3' : 'grid-cols-1 gap-4'}`}>
+    {/* Título y Prioridad */}
+    <div className={`grid ${isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}`}>
       <input 
         type="text" 
         placeholder="Título de la tarea" 
         value={nuevaTarea.titulo || ''} 
         onChange={(e) => setNuevaTarea({...nuevaTarea, titulo: e.target.value})} 
-        className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-sm" 
+        className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm hover:border-blue-300 hover:shadow-sm focus:shadow-md" 
+        style={{ minHeight: '44px' }}
       />
-      <select 
-        value={nuevaTarea.prioridad || 'Media'} 
-        onChange={(e) => setNuevaTarea({...nuevaTarea, prioridad: e.target.value})} 
-        className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors bg-white text-sm"
-      >
-        {prioridades.map(p => <option key={p} value={p}>{p}</option>)}
-      </select>
+      <div className="relative">
+        <select 
+          value={nuevaTarea.prioridad || 'Media'} 
+          onChange={(e) => setNuevaTarea({...nuevaTarea, prioridad: e.target.value})} 
+          className="w-full px-3 py-3 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white text-sm appearance-none cursor-pointer hover:border-blue-300 hover:shadow-sm focus:shadow-md"
+          style={{ 
+            minHeight: '44px',
+            backgroundImage: 'none'
+          }}
+        >
+          {prioridades.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200" />
+      </div>
     </div>
 
+    {/* Descripción */}
     <div className="relative">
       <textarea 
         placeholder="Descripción del problema..." 
@@ -78,25 +137,30 @@ const FormularioNuevaTarea = ({
             setNuevaTarea({...nuevaTarea, descripcion: e.target.value});
           }
         }} 
-        className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-sm resize-none" 
-        rows="4"
+        className="w-full px-3 py-3 pb-8 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm resize-none hover:border-blue-300 hover:shadow-sm focus:shadow-md" 
+        rows={isMobile ? "3" : "4"}
         maxLength="500"
         style={{ resize: 'none' }}
       />
-      <div className="absolute bottom-2 right-2 text-xs text-gray-400">
+      <div className="absolute bottom-2 right-2 text-xs text-gray-400 bg-white px-1">
         {(nuevaTarea.descripcion || '').length}/500
       </div>
     </div>
+
+    {/* Fecha de vencimiento */}
     <input 
       type="date" 
       value={nuevaTarea.fechaVencimiento || ''} 
       onChange={(e) => setNuevaTarea({...nuevaTarea, fechaVencimiento: e.target.value})} 
-      className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-sm" 
+      className="w-full px-3 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm hover:border-blue-300 hover:shadow-sm focus:shadow-md" 
+      style={{ minHeight: '44px' }}
     />
+
+    {/* Botón de asignar */}
     <button 
       onClick={handleAsignarTarea} 
       disabled={!nuevaTarea.revendedorId || !nuevaTarea.trabajadorId || !nuevaTarea.titulo || !nuevaTarea.descripcion} 
-      className="w-full bg-slate-900 hover:bg-slate-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-sm"
+      className={`w-full bg-slate-900 hover:bg-slate-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white ${isMobile ? 'py-3' : 'py-3'} px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-sm shadow-sm hover:shadow-md`}
     >
       <Plus className="w-5 h-5" />
       <span>Asignar Tarea</span>

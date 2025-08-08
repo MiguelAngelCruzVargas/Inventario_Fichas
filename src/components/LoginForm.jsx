@@ -26,6 +26,11 @@ const LoginForm = ({ onLogin }) => {
   });
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [rolDetectado, setRolDetectado] = useState(null);
+
+  // Debug: Log cuando cambia el rolDetectado
+  useEffect(() => {
+    console.log('🔄 rolDetectado cambió a:', rolDetectado);
+  }, [rolDetectado]);
   const [error, setError] = useState('');
   const [adminExists, setAdminExists] = useState(true);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
@@ -58,16 +63,58 @@ const LoginForm = ({ onLogin }) => {
 
   // Detectar rol basado en el usuario ingresado
   useEffect(() => {
-    const username = credentials.username.toLowerCase();
-    if (username === 'admin') {
-      setRolDetectado('admin');
-    } else if (username === 'carlos') {
-      setRolDetectado('trabajador');
-    } else if (username === 'maria') {
-      setRolDetectado('revendedor');
-    } else {
-      setRolDetectado(null);
-    }
+    const detectRole = async () => {
+      const username = credentials.username.trim();
+      console.log('🔍 Detectando rol para username:', username);
+      
+      // No hacer consulta si el username está vacío
+      if (!username) {
+        console.log('❌ Username vacío, no detectar rol');
+        setRolDetectado(null);
+        return;
+      }
+
+      // Detección básica para usuarios conocidos (para UX rápida)
+      const usernameLower = username.toLowerCase();
+      console.log('🔍 Username en minúsculas:', usernameLower);
+      
+      if (usernameLower === 'admin') {
+        console.log('✅ Detectado: admin');
+        setRolDetectado('admin');
+        return;
+      } else if (usernameLower === 'maria') {
+        console.log('✅ Detectado: revendedor (maria)');
+        setRolDetectado('revendedor');
+        return;
+      } else if (usernameLower === 'prueba') {
+        console.log('✅ Detectado: trabajador (prueba)');
+        setRolDetectado('trabajador');
+        return;
+      }
+
+      console.log('🔍 Usuario no reconocido, consultando backend...');
+      
+      // Para otros usuarios, consultar dinámicamente al backend
+      try {
+        const response = await fetch(`/api/auth/detect-role?username=${encodeURIComponent(username)}`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ Respuesta del backend:', data);
+          setRolDetectado(data.tipo_usuario || null);
+        } else {
+          console.log('❌ Error en respuesta del backend:', response.status);
+          setRolDetectado(null);
+        }
+      } catch (error) {
+        // En caso de error, no detectar rol (no es crítico)
+        console.log('❌ Error consultando backend:', error);
+        setRolDetectado(null);
+      }
+    };
+
+    // Debounce para evitar demasiadas consultas
+    const timeoutId = setTimeout(detectRole, 500);
+    return () => clearTimeout(timeoutId);
   }, [credentials.username]);
 
   const handleInputChange = (field, value) => {
@@ -112,32 +159,37 @@ const LoginForm = ({ onLogin }) => {
   };
 
   const getRolConfig = () => {
-    switch (rolDetectado) {
-      case 'admin':
-        return {
-          icon: Shield,
-          title: 'Panel de Administrador',
-          description: 'Acceso completo al sistema'
-        };
-      case 'revendedor':
-        return {
-          icon: Building2,
-          title: 'Portal del Revendedor',
-          description: 'Gestiona tu inventario y ventas'
-        };
-      case 'trabajador':
-        return {
-          icon: Wrench,
-          title: 'Panel del Técnico',
-          description: 'Gestiona inventarios y entregas'
-        };
-      default:
-        return {
-          icon: Wifi,
-          title: 'Sistema de Fichas Internet',
-          description: 'Distribución y Control'
-        };
-    }
+    console.log('🎯 Generando config para rol:', rolDetectado);
+    const config = (() => {
+      switch (rolDetectado) {
+        case 'admin':
+          return {
+            icon: Shield,
+            title: 'Panel de Administrador',
+            description: 'Acceso completo al sistema'
+          };
+        case 'revendedor':
+          return {
+            icon: Building2,
+            title: 'Portal del Revendedor',
+            description: 'Gestiona tu inventario y ventas'
+          };
+        case 'trabajador':
+          return {
+            icon: Wrench,
+            title: 'Panel del Técnico',
+            description: 'Gestiona inventarios y entregas'
+          };
+        default:
+          return {
+            icon: Wifi,
+            title: 'Sistema de Fichas Internet',
+            description: 'Distribución y Control'
+          };
+      }
+    })();
+    console.log('📄 Config generada:', config);
+    return config;
   };
 
   const config = getRolConfig();
@@ -186,7 +238,7 @@ const LoginForm = ({ onLogin }) => {
             <div className="w-6 h-6 sm:w-8 sm:h-8 bg-slate-600 rounded-lg flex items-center justify-center">
               <Wifi className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <span className="text-white font-semibold text-base sm:text-lg">SistemaCorp</span>
+            <span className="text-white font-semibold text-base sm:text-lg">Plaza Wifi</span>
           </div>
           <div className="text-slate-300 text-xs sm:text-sm">
             Sistema de Gestión v2.0
@@ -317,7 +369,7 @@ const LoginForm = ({ onLogin }) => {
             )}
             
             <p className="text-slate-400 text-xs sm:text-sm">
-              © 2025 SistemaCorp. Sistema de Gestión Empresarial
+              © 2025 Plaza Wifi. Sistema de Gestión Empresarial
             </p>
           </div>
         </div>

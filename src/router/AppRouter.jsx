@@ -139,22 +139,42 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 const DashboardRedirect = () => {
   const { user, loading, isAuthenticated } = useAuth();
 
+  console.log('🔀 DashboardRedirect - Estado actual:', {
+    loading,
+    isAuthenticated,
+    user: user ? {
+      id: user.id,
+      username: user.username,
+      tipo_usuario: user.tipo_usuario,
+      nombre_completo: user.nombre_completo
+    } : null
+  });
+
   if (loading) {
+    console.log('⏳ DashboardRedirect - Cargando...');
     return <LoadingScreen />;
   }
 
   if (!isAuthenticated || !user) {
+    console.log('🚫 DashboardRedirect - No autenticado, redirigiendo a login');
     return <Navigate to="/login" replace />;
   }
 
-  switch (user?.tipo_usuario) {
+  const userType = user?.tipo_usuario;
+  console.log(`🎯 DashboardRedirect - Redirigiendo usuario tipo "${userType}"`);
+
+  switch (userType) {
     case 'admin':
+      console.log('👑 Redirigiendo a /admin');
       return <Navigate to="/admin" replace />;
     case 'revendedor':
+      console.log('🏢 Redirigiendo a /revendedor');
       return <Navigate to="/revendedor" replace />;
     case 'trabajador':
+      console.log('🔧 Redirigiendo a /trabajador');
       return <Navigate to="/trabajador" replace />;
     default:
+      console.log(`❓ Tipo de usuario desconocido: "${userType}", redirigiendo a login`);
       return <Navigate to="/login" replace />;
   }
 };

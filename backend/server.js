@@ -61,7 +61,9 @@ const corsOptions = {
     // Lista de orígenes permitidos
     const allowedOrigins = [
       'http://localhost:3000', 'http://localhost:5173', 'http://localhost:5003',
-      'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:5003'
+      'http://localhost:5175', // <-- Agregado para permitir este origen
+      'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:5003',
+      'http://127.0.0.1:5175'  // <-- Agregado para permitir este origen
     ];
     if (allowedOrigins.includes(origin) || origin.includes('.ngrok.io') || origin.includes('.ngrok-free.app') || origin.includes('.ngrok.app') || origin.includes('.loca.lt')) {
       return callback(null, true);

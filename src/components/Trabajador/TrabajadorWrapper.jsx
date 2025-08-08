@@ -10,6 +10,13 @@ const TrabajadorWrapper = () => {
   const navigate = useNavigate();
   const fichasContext = useFichas();
 
+  console.log('🔧 TrabajadorWrapper - Renderizando para usuario:', user ? {
+    id: user.id,
+    username: user.username,
+    tipo_usuario: user.tipo_usuario,
+    nombre_completo: user.nombre_completo
+  } : 'null');
+
   // Handle logout
   const handleLogout = async () => {
     await logout();
@@ -22,6 +29,11 @@ const TrabajadorWrapper = () => {
     currentUser: user,
     onLogout: handleLogout
   };
+
+  console.log('📦 TrabajadorWrapper - Props para VistaTrabajador:', {
+    revendedoresCount: props.revendedores.length,
+    currentUser: props.currentUser ? props.currentUser.username : 'null'
+  });
 
   return <VistaTrabajador {...props} />;
 };

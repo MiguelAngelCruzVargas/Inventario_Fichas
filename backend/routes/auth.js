@@ -16,13 +16,24 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Buscar usuario por username o email
-    const user = await queryOne(
+    // Buscar usuario de forma inteligente: exacta primero, luego parcial
+    let user = await queryOne(
       'SELECT id, username, email, password_hash, tipo_usuario, activo, revendedor_id, nombre_completo, especialidad FROM usuarios WHERE (username = ? OR email = ?) AND activo = 1',
       [username, username]
     );
 
-    if (!user) {
+    // Si no se encuentra coincidencia exacta, buscar por coincidencia parcial
+    if (!user) {
+      user = await queryOne(
+        'SELECT id, username, email, password_hash, tipo_usuario, activo, revendedor_id, nombre_completo, especialidad FROM usuarios WHERE (username LIKE ? OR email LIKE ? OR LOWER(nombre_completo) LIKE LOWER(?)) AND activo = 1 LIMIT 1',
+        [`%${username}%`, `%${username}%`, `%${username}%`]
+      );
+      
+      // Log cuando se encuentra por búsqueda parcial
+      if (user) {
+        console.log(`🔍 Usuario encontrado por búsqueda parcial: "${username}" -> "${user.username}" (${user.nombre_completo})`);
+      }
+    }    if (!user) {
       return res.status(401).json({
         error: 'Credenciales inválidas',
         detail: 'Usuario o contraseña incorrectos'
@@ -350,6 +361,52 @@ router.post('/crear-trabajador', authenticateToken, requireRole(['admin']), asyn
       detail: 'Error al crear el trabajador'
     });
   }
+});
+
+// GET /auth/detect-role - Detectar rol de usuario (para UX del login)
+router.get('/detect-role', async (req, res) => {
+  try {
+    const { username } = req.query;
+
+    if (!username) {
+      return res.status(400).json({
+        error: 'Username requerido',
+        detail: 'Se requiere el parámetro username'
+      });
+    }
+
+    // Buscar usuario de forma inteligente: exacta primero, luego parcial
+    let user = await queryOne(
+      'SELECT tipo_usuario, nombre_completo FROM usuarios WHERE (username = ? OR email = ?) AND activo = 1',
+      [username, username]
+    );
+
+    // Si no se encuentra coincidencia exacta, buscar por coincidencia parcial
+    if (!user) {
+      user = await queryOne(
+        'SELECT tipo_usuario, nombre_completo FROM usuarios WHERE (username LIKE ? OR email LIKE ? OR LOWER(nombre_completo) LIKE LOWER(?)) AND activo = 1 LIMIT 1',
+        [`%${username}%`, `%${username}%`, `%${username}%`]
+      );
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Usuario no encontrado'
+      });
+    }
+
+    res.json({
+      tipo_usuario: user.tipo_usuario,
+      nombre_completo: user.nombre_completo
+    });
+
+  } catch (error) {
+    console.error('Error detectando rol:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      detail: 'Error al detectar el rol del usuario'
+    });
+  }
 });
 
 // GET /auth/admin-exists - Verificar si existe un administrador

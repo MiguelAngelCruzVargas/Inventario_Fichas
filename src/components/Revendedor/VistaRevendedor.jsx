@@ -36,8 +36,61 @@ const VistaRevendedor = ({
   const misCortesHistorial = historialCortes || [];
   const ultimoCorte = misCortesHistorial.length > 0 ? misCortesHistorial[0] : null; // Ordenados por fecha desc
   
+  // Obtener información de porcentajes del último corte o usar valores por defecto
+  const porcentajeRevendedor = ultimoCorte?.porcentaje_revendedor || 80;
+  const porcentajeAdmin = ultimoCorte?.porcentaje_admin || 20;
+  
+  // Calcular totales acumulados de TODOS los cortes
+  const totalesAcumulados = misCortesHistorial.reduce((totales, corte) => {
+    return {
+      totalVendidoAcumulado: totales.totalVendidoAcumulado + (corte.total_vendido || 0),
+      totalComisionAcumulada: totales.totalComisionAcumulada + (corte.total_comision_revendedor || 0),
+      totalTiposVendidos: totales.totalTiposVendidos + (corte.tipos_vendidos?.length || 0)
+    };
+  }, {
+    totalVendidoAcumulado: 0,
+    totalComisionAcumulada: 0,
+    totalTiposVendidos: 0
+  });
+  
   // Filtrar mis tareas de mantenimiento - usar la estructura correcta
-  const misTareas = tareasMantenimiento || [];
+  const todasLasTareas = tareasMantenimiento || [];
+  
+  // Filtrar SOLO las tareas que pertenecen a este revendedor
+  const misTareas = todasLasTareas.filter(tarea => {
+    // Diferentes formas de relacionar tareas con revendedores:
+    return (
+      tarea.revendedor_id === misDatos?.id ||           // Si tiene revendedor_id directo
+      tarea.revendedor_id === currentUser?.revendedor_id ||  // Si usa el revendedor_id del usuario
+      tarea.ubicacion === misDatos?.nombre ||           // Si se relaciona por ubicación/nombre
+      tarea.ubicacion === misDatos?.nombre_negocio ||   // Si se relaciona por nombre del negocio
+      (tarea.trabajador_id && tarea.ubicacion && 
+       (tarea.ubicacion.includes(misDatos?.nombre) || 
+        tarea.ubicacion.includes(misDatos?.nombre_negocio))) // Si es por ubicación parcial
+    );
+  });
+  
+  // Las tareas se están cargando correctamente, quitar debug
+  // console.log('✅ Tareas funcionando correctamente');
+  
+  // DEBUG temporal para cortes de caja - SOLO SI HAY PROBLEMAS
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 Debug Cortes de Caja:', {
+      'historialCortes length': historialCortes?.length || 0,
+      'totalesAcumulados': totalesAcumulados,
+      'ultimoCorte existe': !!ultimoCorte,
+      'porcentajes': { porcentajeRevendedor, porcentajeAdmin }
+    });
+
+    // DEBUG: Si no hay cortes, mostrar información básica
+    if (!historialCortes || historialCortes.length === 0) {
+      console.log('⚠️ NO HAY CORTES para revendedor:', {
+        'currentUser': currentUser?.username,
+        'revendedor': misDatos?.nombre_negocio
+      });
+    }
+  }
+  
   const tareasPendientes = misTareas.filter(t => t.estado === 'Pendiente' || t.estado === 'pendiente');
   const tareasCompletadas = misTareas.filter(t => t.estado === 'Completado' || t.estado === 'completada' || t.estado === 'Completada');
 
@@ -475,104 +528,36 @@ const VistaRevendedor = ({
             {ultimoCorte && (
               <div className="mb-6 sm:mb-8 p-4 sm:p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-2xl border border-purple-100">
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
-                  Último Corte - {new Date(ultimoCorte.fecha).toLocaleDateString('es-MX')}
+                  Resumen Total - Todos mis Cortes
                 </h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
                   <div className="bg-white p-3 sm:p-4 rounded-xl text-center shadow-sm">
-                    <h4 className="font-semibold text-emerald-800 mb-2 text-sm sm:text-base">Mi Comisión Total</h4>
+                    <h4 className="font-semibold text-emerald-800 mb-2 text-sm sm:text-base">Mi Ganancia Total</h4>
                     <p className="text-lg sm:text-2xl font-bold text-emerald-600">
-                      ${ultimoCorte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
+                      ${totalesAcumulados.totalComisionAcumulada?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
                     </p>
+                    <p className="text-xs text-emerald-700">{porcentajeRevendedor}% de las ventas</p>
                   </div>
                   
                   <div className="bg-white p-3 sm:p-4 rounded-xl text-center shadow-sm">
                     <h4 className="font-semibold text-blue-800 mb-2 text-sm sm:text-base">Total Vendido</h4>
                     <p className="text-lg sm:text-2xl font-bold text-blue-600">
-                      ${ultimoCorte.total_vendido?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
+                      ${totalesAcumulados.totalVendidoAcumulado?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
                     </p>
+                    <p className="text-xs text-blue-700">Ventas totales</p>
                   </div>
 
                   <div className="bg-white p-3 sm:p-4 rounded-xl text-center shadow-sm">
-                    <h4 className="font-semibold text-purple-800 mb-2 text-sm sm:text-base">Tipos Vendidos</h4>
+                    <h4 className="font-semibold text-purple-800 mb-2 text-sm sm:text-base">Cortes Realizados</h4>
                     <p className="text-lg sm:text-2xl font-bold text-purple-600">
-                      {ultimoCorte.tipos_vendidos?.length || 0}
+                      {misCortesHistorial.length}
                     </p>
+                    <p className="text-xs text-purple-700">Histórico completo</p>
                   </div>
                 </div>
 
-                {/* Detalle por tipo de ficha del último corte */}
-                {ultimoCorte.tipos_vendidos && ultimoCorte.tipos_vendidos.length > 0 && (
-                  <div className="bg-white rounded-xl p-3 sm:p-4">
-                    <h4 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Detalle por Tipo de Ficha</h4>
-                    
-                    {/* Vista móvil: Cards apiladas */}
-                    <div className="sm:hidden space-y-3">
-                      {ultimoCorte.tipos_vendidos.map((tipo, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                          <div className="flex justify-between items-start">
-                            <h5 className="font-medium text-gray-900 text-sm">{tipo.tipo_ficha}</h5>
-                            <span className="text-emerald-600 font-semibold text-sm">
-                              ${tipo.comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <span className="text-gray-500">Entregadas:</span>
-                              <p className="font-medium">{tipo.entregadas}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Restantes:</span>
-                              <p className="font-medium">{tipo.restantes}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Vendidas:</span>
-                              <p className="font-medium text-blue-600">{tipo.vendidas}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Mi comisión:</span>
-                              <p className="font-medium text-emerald-600">
-                                ${tipo.comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
 
-                    {/* Vista desktop: Tabla */}
-                    <div className="hidden sm:block overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-gray-50 rounded-lg">
-                          <tr>
-                            <th className="px-3 sm:px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider rounded-l-lg">Tipo</th>
-                            <th className="px-3 sm:px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Entregadas</th>
-                            <th className="px-3 sm:px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Restantes</th>
-                            <th className="px-3 sm:px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Vendidas</th>
-                            <th className="px-3 sm:px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider rounded-r-lg">Mi Comisión</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {ultimoCorte.tipos_vendidos.map((tipo, index) => (
-                            <tr key={index} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-3 sm:px-4 py-3 font-medium text-gray-900 text-sm">{tipo.tipo_ficha}</td>
-                              <td className="px-3 sm:px-4 py-3 text-center text-gray-600 text-sm">{tipo.entregadas}</td>
-                              <td className="px-3 sm:px-4 py-3 text-center text-gray-600 text-sm">{tipo.restantes}</td>
-                              <td className="px-3 sm:px-4 py-3 text-center">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {tipo.vendidas}
-                                </span>
-                              </td>
-                              <td className="px-3 sm:px-4 py-3 text-right font-semibold text-emerald-600 text-sm">
-                                ${tipo.comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -596,7 +581,7 @@ const VistaRevendedor = ({
                           <p className="font-semibold text-emerald-600 text-sm sm:text-base">
                             ${corte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
                           </p>
-                          <p className="text-xs sm:text-sm text-gray-500">Mi comisión</p>
+                          <p className="text-xs sm:text-sm text-gray-500">Mi ganancia ({corte.porcentaje_revendedor || porcentajeRevendedor}%)</p>
                         </div>
                       </div>
                       
@@ -606,11 +591,11 @@ const VistaRevendedor = ({
                           <p className="font-medium">${corte.total_vendido?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
                         </div>
                         <div>
-                          <span className="text-gray-600">Mi comisión:</span>
+                          <span className="text-gray-600">Mi ganancia ({corte.porcentaje_revendedor || porcentajeRevendedor}%):</span>
                           <p className="font-medium text-emerald-600">${corte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
                         </div>
                         <div>
-                          <span className="text-gray-600">Para proveedor:</span>
+                          <span className="text-gray-600">Para admin ({corte.porcentaje_admin || porcentajeAdmin}%):</span>
                           <p className="font-medium text-purple-600">${corte.total_ganancia_admin?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
                         </div>
                       </div>

@@ -68,35 +68,117 @@ export const FichasProvider = ({ children }) => {
     }
   };
 
-  // Cargar datos iniciales con throttling
+  // Cargar datos iniciales con throttling agresivo (OPTIMIZADO)
   useEffect(() => {
     let timeoutId;
+    let mounted = true;
     
-    if (isAuthenticated && user) {
-      // Throttling: esperar 1 segundo antes de cargar datos
+    if (isAuthenticated && user && mounted) {
+      console.log('🔄 Programando carga inicial de datos...');
+      
+      // Throttling más agresivo: esperar 3 segundos antes de cargar datos
       timeoutId = setTimeout(() => {
-        loadAllData();
-      }, 1000);
+        if (mounted) {
+          console.log('🚀 Iniciando carga de datos del contexto...');
+          loadAllData();
+        }
+      }, 3000); // Aumentado de 1s a 3s para evitar colisiones
     }
     
     return () => {
+      mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isAuthenticated, user?.tipo_usuario]); // Removido user?.revendedor_id para reducir triggers
+  }, [isAuthenticated, user?.id]); // Solo disparar por autenticación o cambio de usuario, NO por tipo_usuario
 
-  // DESHABILITADO: Reaccionar a cambios en usuarios para evitar rate limiting
-  // useEffect(() => {
-  //   if (isAuthenticated && user && userRole === 'admin' && updateTrigger > 0) {
-  //     console.log('🔄 Detectado cambio en usuarios, recargando trabajadores y revendedores...');
-  //     // Throttling más agresivo: 5 segundos
-  //     const timeoutId = setTimeout(() => {
-  //       recargarTrabajadores();
-  //       recargarRevendedores();
-  //     }, 5000);
-  //     
-  //     return () => clearTimeout(timeoutId);
-  //   }
-  // }, [updateTrigger, isAuthenticated, user, userRole]);
+  // Sistema de actualizaciones en tiempo real optimizado (como las grandes empresas)
+  useEffect(() => {
+    if (!isAuthenticated || !user || userRole !== 'admin') {
+      return;
+    }
+
+    console.log('� Configurando sistema de tiempo real optimizado...');
+
+    // Callback para actualizar trabajadores (CON THROTTLING)
+    let trabajadoresTimeout;
+    const handleTrabajadoresUpdate = async () => {
+      if (trabajadoresTimeout) {
+        console.log('⏸️ Actualizacion de trabajadores ya programada, saltando...');
+        return; // Evitar duplicados
+      }
+      
+      trabajadoresTimeout = setTimeout(async () => {
+        console.log('🔄 Actualizando trabajadores (throttled)...');
+        try {
+          const result = await tareasService.obtenerTrabajadoresDisponibles();
+          if (result.success) {
+            setTrabajadores(result.trabajadores);
+            console.log('✅ Trabajadores actualizados:', result.trabajadores.length);
+          }
+        } catch (error) {
+          console.error('❌ Error actualizando trabajadores:', error);
+        } finally {
+          trabajadoresTimeout = null;
+        }
+      }, 500); // 500ms de delay
+    };
+
+    // Callback para actualizar revendedores (CON THROTTLING)
+    let revendedoresTimeout;
+    const handleRevendedoresUpdate = async () => {
+      if (revendedoresTimeout) {
+        console.log('⏸️ Actualizacion de revendedores ya programada, saltando...');
+        return; // Evitar duplicados
+      }
+      
+      revendedoresTimeout = setTimeout(async () => {
+        console.log('🔄 Actualizando revendedores (throttled)...');
+        try {
+          const result = await fichasService.obtenerRevendedores();
+          setRevendedores(result);
+          console.log('✅ Revendedores actualizados:', result.length);
+        } catch (error) {
+          console.error('❌ Error actualizando revendedores:', error);
+        } finally {
+          revendedoresTimeout = null;
+        }
+      }, 700); // 700ms de delay
+    };
+
+    // Escuchar eventos tradicionales para actualizar datos
+    const handleTrabajadoresChanged = () => {
+      handleTrabajadoresUpdate();
+    };
+
+    const handleRevendedoresChanged = () => {
+      handleRevendedoresUpdate();
+    };
+
+    window.addEventListener('trabajadoresChanged', handleTrabajadoresChanged);
+    window.addEventListener('revendedoresChanged', handleRevendedoresChanged);
+
+    return () => {
+      // Cleanup
+      window.removeEventListener('trabajadoresChanged', handleTrabajadoresChanged);
+      window.removeEventListener('revendedoresChanged', handleRevendedoresChanged);
+    };
+  }, [isAuthenticated, user, userRole]);
+
+  // Reaccionar a cambios del contexto de usuarios (SISTEMA CONSERVADOR)
+  useEffect(() => {
+    if (isAuthenticated && user && userRole === 'admin' && updateTrigger > 0) {
+      console.log('🎯 Cambio detectado en UsersContext - recargando datos');
+      
+      // Usar delays para evitar saturar la API
+      setTimeout(() => {
+        handleTrabajadoresUpdate();
+      }, 1000); // 1 segundo de delay
+      
+      setTimeout(() => {
+        handleRevendedoresUpdate();
+      }, 1500); // 1.5 segundos de delay
+    }
+  }, [updateTrigger, isAuthenticated, user, userRole]);
 
   const loadAllData = async (forceRefresh = false) => {
     if (loading && !forceRefresh) {
@@ -107,36 +189,45 @@ export const FichasProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('📦 Cargando datos esenciales...', { userRole, forceRefresh });
+      console.log('📦 Cargando datos esenciales (MODO CONSERVADOR)...', { userRole, forceRefresh });
       
-      // PASO 1: Cargar solo datos esenciales con delay mínimo
+      // PASO 1: SOLO tipos de fichas (lo más esencial)
       const tiposFichaData = await fichasService.obtenerTiposFicha();
       setTiposFicha(tiposFichaData);
       console.log('✅ Tipos de fichas cargados');
 
-      // PASO 2: Cargar datos específicos con throttling agresivo
+      // PASO 2: Para admin, cargar datos críticos CON DELAYS LARGOS
       if (userRole === 'admin') {
-        // Solo datos críticos para admin con delays
-        await new Promise(resolve => setTimeout(resolve, 200));
+        console.log('👤 Modo admin detectado - cargando datos críticos con throttling conservador...');
         
-        const [revendedoresData, stockGlobalData] = await Promise.allSettled([
-          fichasService.obtenerRevendedores(),
-          fichasService.obtenerStockGlobal().catch(() => [])
-        ]);
-
-        if (revendedoresData.status === 'fulfilled') {
-          setRevendedores(revendedoresData.value);
+        // Delay más largo para evitar saturar la API
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Aumentado de 200ms a 1s
+        
+        // Solo cargar revendedores inicialmente
+        try {
+          const revendedoresData = await fichasService.obtenerRevendedores();
+          setRevendedores(revendedoresData);
           console.log('✅ Revendedores cargados');
+        } catch (error) {
+          console.error('❌ Error cargando revendedores:', error);
         }
 
-        if (stockGlobalData.status === 'fulfilled') {
-          setStockGlobal(stockGlobalData.value);
-          console.log('✅ Stock global cargado');
-        }
-
-        // Cargar trabajadores solo si es necesario (con delay adicional)
+        // Stock global en background (OPCIONAL)
         setTimeout(async () => {
           try {
+            const stockGlobalData = await fichasService.obtenerStockGlobal();
+            setStockGlobal(stockGlobalData);
+            console.log('✅ Stock global cargado (background)');
+          } catch (error) {
+            console.warn('⚠️ Error cargando stock global (no crítico):', error);
+            setStockGlobal([]);
+          }
+        }, 2000); // 2 segundos después
+
+        // Trabajadores y tareas SOLO cuando sea realmente necesario (MUCHO MÁS TARDE)
+        setTimeout(async () => {
+          try {
+            console.log('🔄 Cargando trabajadores (background)...');
             const result = await tareasService.obtenerTrabajadoresDisponibles();
             if (result.success) {
               setTrabajadores(result.trabajadores);
@@ -145,14 +236,25 @@ export const FichasProvider = ({ children }) => {
               console.warn('⚠️ Error obteniendo trabajadores disponibles:', result.error);
               setTrabajadores([]);
             }
+
+            // Cargar tareas
+            const tareasResult = await tareasService.obtenerTareas();
+            if (tareasResult.success) {
+              setTareasMantenimiento(tareasResult.tareas);
+              console.log('✅ Tareas cargadas (background):', tareasResult.tareas.length);
+            } else {
+              console.warn('⚠️ Error obteniendo tareas:', tareasResult.error);
+              setTareasMantenimiento([]);
+            }
           } catch (error) {
-            console.warn('⚠️ Error cargando trabajadores en background:', error);
+            console.warn('⚠️ Error cargando trabajadores y tareas en background:', error);
             setTrabajadores([]);
+            setTareasMantenimiento([]);
           }
         }, 1000);
         
       } else if (userRole === 'revendedor' && user?.revendedor_id) {
-        // Para revendedores: solo datos críticos
+        // Para revendedores: mantener loading hasta que todos los datos estén cargados
         await new Promise(resolve => setTimeout(resolve, 200));
         
         try {
@@ -167,6 +269,36 @@ export const FichasProvider = ({ children }) => {
           const misDatos = await fichasService.obtenerRevendedorActual();
           setRevendedores([misDatos]);
           console.log('✅ Datos del revendedor cargados:', misDatos);
+
+          // También cargar tareas de mantenimiento para el revendedor
+          try {
+            const tareasResult = await tareasService.obtenerMisTareasRevendedor();
+            if (tareasResult.success) {
+              setTareasMantenimiento(tareasResult.tareas);
+              console.log('✅ Tareas cargadas para revendedor:', tareasResult.tareas.length);
+            } else {
+              console.warn('⚠️ Error obteniendo tareas para revendedor:', tareasResult.error);
+              setTareasMantenimiento([]);
+            }
+          } catch (tareasError) {
+            console.warn('⚠️ Error cargando tareas para revendedor:', tareasError);
+            setTareasMantenimiento([]);
+          }
+
+          // También cargar cortes de caja para el revendedor
+          try {
+            const cortesResult = await cortesCajaService.obtenerMisCortes();
+            if (cortesResult.success) {
+              setHistorialCortes(cortesResult.data);
+              console.log('✅ Cortes de caja cargados para revendedor:', cortesResult.data.length);
+            } else {
+              console.warn('⚠️ Error obteniendo cortes para revendedor:', cortesResult.error);
+              setHistorialCortes([]);
+            }
+          } catch (cortesError) {
+            console.warn('⚠️ Error cargando cortes para revendedor:', cortesError);
+            setHistorialCortes([]);
+          }
         } catch (error) {
           console.error('❌ Error cargando datos del revendedor:', {
             error: error.message,
@@ -520,7 +652,10 @@ export const FichasProvider = ({ children }) => {
     try {
       const resultado = await tareasService.crearTarea(tareaData);
       if (resultado.success) {
-        setTareasMantenimiento(prev => [...prev, resultado.tarea]);
+        // No agregamos al estado local porque solo tenemos el ID
+        // En su lugar, recargamos todas las tareas para obtener los datos completos
+        console.log('✅ Tarea creada con ID:', resultado.tarea_id);
+        await recargarTareas();
         return resultado;
       }
       return resultado;
