@@ -39,25 +39,26 @@ const Dashboard = () => {
   // Cargar datos del dashboard con throttling agresivo
   useEffect(() => {
     let timeoutId;
-    
+
+    // Si ya hay datos en cache de UsersContext, usarlos inmediatamente y NO disparar fetch
+    if (cachedDashboardData) {
+      console.log('⚡ Usando datos cacheados del dashboard (sin nueva llamada)');
+      setDashboardData(prev => ({
+        ...prev,
+        ...cachedDashboardData,
+        loading: false,
+        error: null
+      }));
+      return; // Evita scheduling
+    }
+
     const fetchDashboardData = async () => {
       try {
         setDashboardData(prev => ({ ...prev, loading: true, error: null }));
-        
-        console.log('📊 Cargando datos del dashboard...');
-
-        // Cargar todas las estadísticas desde la nueva API
+        console.log('� (fresh) Cargando datos del dashboard...');
         const response = await apiClient.get('/dashboard/stats');
-        
         if (response.data && response.data.success) {
           const data = response.data.data;
-          
-          console.log('📊 Datos recibidos:', data);
-          console.log('📈 Revendedores:', data.revendedores?.length || 0);
-          console.log('🚚 Entregas:', data.entregas?.length || 0);
-          console.log('🎫 Tipos de ficha:', data.tiposFicha?.length || 0);
-          console.log('⚙️ Tareas:', data.tareasMantenimiento?.length || 0);
-          
           setDashboardData({
             revendedores: data.revendedores || [],
             entregas: data.entregas || [],
@@ -69,15 +70,11 @@ const Dashboard = () => {
             loading: false,
             error: null
           });
-          
-          // Guardar en contexto para futuras consultas
           updateDashboardData(data);
-          
-          console.log('✅ Datos del dashboard cargados exitosamente');
+          console.log('✅ Dashboard datos frescos cargados');
         } else {
           throw new Error('Respuesta inválida del servidor');
         }
-        
       } catch (error) {
         console.error('❌ Error loading dashboard data:', error);
         setDashboardData(prev => ({
@@ -88,15 +85,10 @@ const Dashboard = () => {
       }
     };
 
-    // Throttling: Solo cargar una vez cada 5 segundos máximo
-    timeoutId = setTimeout(() => {
-      fetchDashboardData();
-    }, 2000); // Delay de 2 segundos
+    timeoutId = setTimeout(fetchDashboardData, 1200); // Delay reducido (1.2s) porque hay grace en otros
 
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, []); // SOLO cargar una vez al montar, no en cada updateTrigger
+    return () => clearTimeout(timeoutId);
+  }, [cachedDashboardData, updateDashboardData]);
 
   // Función para recargar datos manualmente
   const recargarDatos = async () => {

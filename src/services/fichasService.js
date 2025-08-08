@@ -31,20 +31,56 @@ class FichasService {
       // Stock global
       stockGlobal: '/stock-global'
     };
+
+    // Cache interno simple (memoria) con TTL
+    // Estructura: { key: { data, expiresAt } }
+    this._cache = new Map();
+    this.defaultTTL = 10000; // 10s por defecto para panel admin
+  }
+
+  // Obtener del cache o ejecutar fetcher
+  async _getCached(key, fetcher, { ttl = this.defaultTTL, forceRefresh = false } = {}) {
+    try {
+      if (!forceRefresh && this._cache.has(key)) {
+        const entry = this._cache.get(key);
+        if (Date.now() < entry.expiresAt) {
+          return entry.data;
+        } else {
+          // Expirado
+          this._cache.delete(key);
+        }
+      }
+      const data = await fetcher();
+      this._cache.set(key, { data, expiresAt: Date.now() + ttl });
+      return data;
+    } catch (e) {
+      // Si falla y hay cache viejo aún válido, devolverlo como fallback silencioso
+      if (this._cache.has(key)) {
+        const entry = this._cache.get(key);
+        if (Date.now() < entry.expiresAt) return entry.data;
+      }
+      throw e;
+    }
+  }
+
+  _invalidate(pattern) {
+    for (const key of this._cache.keys()) {
+      if (key.includes(pattern)) this._cache.delete(key);
+    }
   }
 
   // ===== REVENDEDORES =====
   
-  async obtenerRevendedores() {
-    return await apiHelpers.get(this.endpoints.revendedores);
+  async obtenerRevendedores(options = {}) {
+    return await this._getCached('revendedores', () => apiHelpers.get(this.endpoints.revendedores), options);
   }
 
-  async obtenerRevendedor(id) {
-    return await apiHelpers.get(this.endpoints.revendedor(id));
+  async obtenerRevendedor(id, options = {}) {
+    return await this._getCached(`revendedor:${id}`, () => apiHelpers.get(this.endpoints.revendedor(id)), options);
   }
 
-  async obtenerRevendedorActual() {
-    return await apiHelpers.get('/revendedores/me');
+  async obtenerRevendedorActual(options = {}) {
+    return await this._getCached('revendedor:me', () => apiHelpers.get('/revendedores/me'), options);
   }
 
   async crearRevendedor(revendedorData) {
@@ -64,11 +100,15 @@ class FichasService {
   }
 
   async actualizarRevendedor(id, updates) {
-    return await apiHelpers.put(this.endpoints.revendedor(id), updates);
+    const res = await apiHelpers.put(this.endpoints.revendedor(id), updates);
+    this._invalidate('revendedor');
+    return res;
   }
 
   async eliminarRevendedor(id) {
-    return await apiHelpers.delete(this.endpoints.revendedor(id));
+    const res = await apiHelpers.delete(this.endpoints.revendedor(id));
+    this._invalidate('revendedor');
+    return res;
   }
 
   // ===== USUARIOS/TRABAJADORES =====
@@ -87,8 +127,8 @@ class FichasService {
 
   // ===== TIPOS DE FICHA =====
   
-  async obtenerTiposFicha() {
-    return await apiHelpers.get(this.endpoints.tiposFicha);
+  async obtenerTiposFicha(options = {}) {
+    return await this._getCached('tiposFicha', () => apiHelpers.get(this.endpoints.tiposFicha), options);
   }
 
   async crearTipoFicha(tipoData) {
@@ -111,8 +151,8 @@ class FichasService {
 
   // ===== INVENTARIOS =====
   
-  async obtenerInventarioRevendedor(revendedorId) {
-    return await apiHelpers.get(this.endpoints.inventarioRevendedor(revendedorId));
+  async obtenerInventarioRevendedor(revendedorId, options = {}) {
+    return await this._getCached(`inventario:${revendedorId}`, () => apiHelpers.get(this.endpoints.inventarioRevendedor(revendedorId)), options);
   }
 
   async ajustarInventarioExcel(revendedorId, tipoFichaId, campo, cantidad) {
@@ -134,8 +174,8 @@ class FichasService {
 
   // ===== PRECIOS =====
   
-  async obtenerPreciosRevendedor(revendedorId) {
-    return await apiHelpers.get(this.endpoints.preciosRevendedor(revendedorId));
+  async obtenerPreciosRevendedor(revendedorId, options = {}) {
+    return await this._getCached(`precios:${revendedorId}`, () => apiHelpers.get(this.endpoints.preciosRevendedor(revendedorId)), options);
   }
 
   async crearPrecioRevendedor(precioData) {
@@ -201,16 +241,16 @@ class FichasService {
 
   // ===== ENTREGAS =====
   
-  async obtenerEntregas() {
-    return await apiHelpers.get(this.endpoints.entregas);
+  async obtenerEntregas(options = {}) {
+    return await this._getCached('entregas', () => apiHelpers.get(this.endpoints.entregas), options);
   }
 
-  async obtenerEntregasRevendedor(revendedorId) {
-    return await apiHelpers.get(this.endpoints.entregasRevendedor(revendedorId));
+  async obtenerEntregasRevendedor(revendedorId, options = {}) {
+    return await this._getCached(`entregas:${revendedorId}`, () => apiHelpers.get(this.endpoints.entregasRevendedor(revendedorId)), options);
   }
 
-  async obtenerMisEntregas() {
-    return await apiHelpers.get('/entregas/me');
+  async obtenerMisEntregas(options = {}) {
+    return await this._getCached('entregas:me', () => apiHelpers.get('/entregas/me'), options);
   }
 
   async crearEntrega(entregaData) {
@@ -219,12 +259,12 @@ class FichasService {
 
   // ===== VENTAS =====
   
-  async obtenerVentas() {
-    return await apiHelpers.get(this.endpoints.ventas);
+  async obtenerVentas(options = {}) {
+    return await this._getCached('ventas', () => apiHelpers.get(this.endpoints.ventas), options);
   }
 
-  async obtenerVentasRevendedor(revendedorId) {
-    return await apiHelpers.get(this.endpoints.ventasRevendedor(revendedorId));
+  async obtenerVentasRevendedor(revendedorId, options = {}) {
+    return await this._getCached(`ventas:${revendedorId}`, () => apiHelpers.get(this.endpoints.ventasRevendedor(revendedorId)), options);
   }
 
   async crearVenta(ventaData) {
@@ -233,8 +273,8 @@ class FichasService {
 
   // ===== STOCK GLOBAL =====
   
-  async obtenerStockGlobal() {
-    return await apiHelpers.get(this.endpoints.stockGlobal);
+  async obtenerStockGlobal(options = {}) {
+    return await this._getCached('stockGlobal', () => apiHelpers.get(this.endpoints.stockGlobal), options);
   }
 
   async crearStockGlobal(stockData) {
