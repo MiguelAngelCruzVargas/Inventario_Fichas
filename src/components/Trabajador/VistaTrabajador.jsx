@@ -115,6 +115,13 @@ const VistaTrabajador = ({
   const [filtro, setFiltro] = useState('pendientes');
   const [misTareas, setMisTareas] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [graceExpired, setGraceExpired] = useState(false); // periodo de gracia para evitar parpadeos
+  const [mountTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = setTimeout(() => setGraceExpired(true), 1000); // 1s similar a revendedor
+    return () => clearTimeout(t);
+  }, []);
   const [error, setError] = useState(null);
   
   // Estado para el modal de notas
@@ -154,25 +161,15 @@ const VistaTrabajador = ({
   const tareasEnProgreso = misTareas.filter(t => t.estado === 'En Progreso');
   const tareasCompletadas = misTareas.filter(t => t.estado === 'Completado');
 
-  // Si no hay datos del usuario actual, mostrar loading
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando información del usuario...</p>
-        </div>
-      </div>
-    );
-  }
+  const initialPendingWindow = Date.now() - mountTime < 3000; // ventana mientras se piden datos
 
-  // Si está cargando las tareas
-  if (cargando) {
+  if (!currentUser || (cargando || !graceExpired || initialPendingWindow)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando tus tareas...</p>
+          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 font-medium">Cargando datos del trabajador...</p>
+          <p className="text-gray-400 text-sm mt-2">Preparando tu panel</p>
         </div>
       </div>
     );
