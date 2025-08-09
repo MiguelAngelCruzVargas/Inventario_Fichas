@@ -124,7 +124,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
 
       // Series mensuales y semanales de cortes
       // Además necesitamos unidades por periodo y top tipos desde detalle_tipos (JSON)
-      const cortesDetalle = await query(`
+  const cortesDetalle = await query(`
         SELECT c.fecha_corte, c.detalle_tipos, c.observaciones, c.total_ingresos, c.total_ganancias, c.total_revendedores
         FROM cortes_caja c
         WHERE 1=1 ${whereDateCortes}
@@ -269,10 +269,88 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
         topRevendedores = arrR.slice(0, parseInt(limit) || 5);
       }
     } else {
-      // Con filtro por revendedor, devolvemos solo datos de ventas (cortes no distinguen revendedor)
-      porMes = porMesVentas;
-      porSemana = porSemanaVentas;
+      // Con filtro por revendedor, incluir también cortes de ese revendedor si la tabla ya tiene revendedor_id
+      porMes = [...porMesVentas];
+      porSemana = [...porSemanaVentas];
       totales = { ...(totalesVentas[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 }) };
+
+      const paramsC = [parseInt(revendedor_id)];
+      const whereDateC = buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsC);
+      const cortes = await query(`
+        SELECT c.fecha_corte, c.detalle_tipos, c.total_ingresos, c.total_ganancias, c.total_revendedores
+        FROM cortes_caja c
+        WHERE c.revendedor_id = ? ${whereDateC}
+        ORDER BY c.fecha_corte ASC
+      `, paramsC);
+
+      const unidadesPorMes = new Map();
+      const unidadesPorSemana = new Map();
+      const topTiposDesdeCortes = new Map();
+
+      for (const row of cortes) {
+        const fecha = row.fecha_corte ? new Date(row.fecha_corte) : null;
+        let detalles = [];
+        try { detalles = typeof row.detalle_tipos === 'string' ? JSON.parse(row.detalle_tipos || '[]') : (row.detalle_tipos || []); } catch { detalles = []; }
+        const periodoMes = fecha ? `${fecha.getFullYear()}-${String(fecha.getMonth()+1).padStart(2,'0')}` : 'desconocido';
+        const week = fecha ? (function isoWeek(d){ const tmp=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const dayNum=(tmp.getUTCDay()+6)%7; tmp.setUTCDate(tmp.getUTCDate()-dayNum+3); const firstThursday=new Date(Date.UTC(tmp.getUTCFullYear(),0,4)); const weekNum=1+Math.round(((tmp-firstThursday)/86400000-3+((firstThursday.getUTCDay()+6)%7))/7); return `${tmp.getUTCFullYear()}-W${String(weekNum).padStart(2,'0')}`;})(fecha) : 'desconocido';
+        let unidadesCorte = 0;
+        for (const det of detalles) {
+          const unidades = Number(det.vendidas || 0);
+          const totalVendidoDet = Number(det.valorVendido || det.valor_total || 0);
+          const tipo = det.tipo || det.tipo_ficha || 'Sin tipo';
+          unidadesCorte += unidades;
+          const prev = topTiposDesdeCortes.get(tipo) || { unidades: 0, total_vendido: 0 };
+          topTiposDesdeCortes.set(tipo, { unidades: prev.unidades + unidades, total_vendido: prev.total_vendido + totalVendidoDet });
+        }
+        unidadesPorMes.set(periodoMes, (unidadesPorMes.get(periodoMes) || 0) + unidadesCorte);
+        unidadesPorSemana.set(week, (unidadesPorSemana.get(week) || 0) + unidadesCorte);
+      }
+
+      // Montos por cortes
+      const paramsCMes = [parseInt(revendedor_id)];
+      const montosMes = await query(`
+        SELECT DATE_FORMAT(c.fecha_corte, '%Y-%m') AS periodo,
+               COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
+               COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
+               COALESCE(SUM(c.total_ganancias),0) AS total_admin
+        FROM cortes_caja c
+        WHERE c.revendedor_id = ? ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCMes)}
+        GROUP BY DATE_FORMAT(c.fecha_corte, '%Y-%m')
+        ORDER BY periodo ASC
+      `, paramsCMes);
+      const porMesC = montosMes.map(m => ({ ...m, unidades: unidadesPorMes.get(m.periodo) || 0 }));
+
+      const paramsCSem = [parseInt(revendedor_id)];
+      const montosSem = await query(`
+        SELECT CONCAT(YEAR(c.fecha_corte), '-W', LPAD(WEEK(c.fecha_corte, 3), 2, '0')) AS periodo,
+               COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
+               COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
+               COALESCE(SUM(c.total_ganancias),0) AS total_admin
+        FROM cortes_caja c
+        WHERE c.revendedor_id = ? ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCSem)}
+        GROUP BY YEAR(c.fecha_corte), WEEK(c.fecha_corte, 3)
+        ORDER BY MIN(c.fecha_corte) ASC
+      `, paramsCSem);
+      const porSemanaC = montosSem.map(m => ({ ...m, unidades: unidadesPorSemana.get(m.periodo) || 0 }));
+
+      // Acumular en totales
+      totales.total_vendido = Number(totales.total_vendido || 0) + (montosMes.reduce((s,m)=>s+Number(m.total_vendido||0),0));
+      totales.total_revendedor = Number(totales.total_revendedor || 0) + (montosMes.reduce((s,m)=>s+Number(m.total_revendedor||0),0));
+      totales.total_admin = Number(totales.total_admin || 0) + (montosMes.reduce((s,m)=>s+Number(m.total_admin||0),0));
+      totales.total_unidades = Number(totales.total_unidades || 0) + Array.from(unidadesPorMes.values()).reduce((a,b)=>a+b,0);
+
+      // Fusionar series
+      const mergeSeries = (a, b) => {
+        const map = new Map();
+        for (const row of a) map.set(row.periodo, { ...row, total_vendido: Number(row.total_vendido||0), total_revendedor: Number(row.total_revendedor||0), total_admin: Number(row.total_admin||0), unidades: Number(row.unidades||0) });
+        for (const row of b) {
+          const prev = map.get(row.periodo) || { periodo: row.periodo, total_vendido: 0, total_revendedor: 0, total_admin: 0, unidades: 0 };
+          map.set(row.periodo, { periodo: row.periodo, total_vendido: prev.total_vendido + Number(row.total_vendido||0), total_revendedor: prev.total_revendedor + Number(row.total_revendedor||0), total_admin: prev.total_admin + Number(row.total_admin||0), unidades: prev.unidades + Number(row.unidades||0) });
+        }
+        return Array.from(map.values()).sort((x,y)=> (x.periodo>y.periodo?1:-1));
+      };
+      porMes = mergeSeries(porMes, porMesC);
+      porSemana = mergeSeries(porSemana, porSemanaC);
     }
 
     res.json({
@@ -322,16 +400,20 @@ router.get('/export', authenticateToken, requireRole(['admin']), async (req, res
     const paramsC = [];
     const whereDateC = buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsC);
     const cortes = await query(`
-      SELECT c.fecha_corte, c.detalle_tipos, c.observaciones
+      SELECT c.fecha_corte, c.detalle_tipos, c.observaciones, c.revendedor_id, c.revendedor_nombre
       FROM cortes_caja c
       WHERE 1=1 ${whereDateC}
       ORDER BY c.fecha_corte DESC
     `, paramsC);
 
     // Obtener porcentaje admin por revendedor (si logramos inferir nombre)
-    const getPorcentajeAdmin = async (nombre) => {
+    const getPorcentajeAdmin = async (nombre, id) => {
       if (!nombre) return null;
       try {
+        if (id) {
+          const r1 = await query(`SELECT porcentaje_comision FROM revendedores WHERE id = ? LIMIT 1`, [id]);
+          if (r1.length && r1[0].porcentaje_comision != null) return parseFloat(r1[0].porcentaje_comision);
+        }
         const r = await query(`SELECT porcentaje_comision FROM revendedores WHERE nombre_negocio = ? OR nombre = ? LIMIT 1`, [nombre, nombre]);
         if (r.length && r[0].porcentaje_comision != null) return parseFloat(r[0].porcentaje_comision);
       } catch {}
@@ -350,10 +432,11 @@ router.get('/export', authenticateToken, requireRole(['admin']), async (req, res
       let detalles = [];
       try { detalles = typeof c.detalle_tipos === 'string' ? JSON.parse(c.detalle_tipos || '[]') : (c.detalle_tipos || []); } catch { detalles = []; }
       const obs = c.observaciones || '';
-      // extraer nombre: "Corte para X"
-      const m = obs.match(/Corte\s+para\s+(.+)/i);
-      const nombre = m ? m[1].trim() : '';
-      const pctAdmin = (await getPorcentajeAdmin(nombre)) ?? pctGlobal;
+      const nombre = c.revendedor_nombre || (function(){
+        const m = obs.match(/Corte\s+para\s+(.+)/i);
+        return m ? m[1].trim() : '';
+      })();
+      const pctAdmin = (await getPorcentajeAdmin(nombre, c.revendedor_id)) ?? pctGlobal;
       const factorAdmin = pctAdmin / 100;
 
       for (const d of detalles) {

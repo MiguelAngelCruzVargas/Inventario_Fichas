@@ -133,16 +133,20 @@ router.post('/', async (req, res) => {
         fecha_corte,
         usuario_id,
         usuario_nombre,
+        revendedor_id,
+        revendedor_nombre,
         total_ingresos,
         total_ganancias,
         total_revendedores,
         detalle_tipos,
         observaciones
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       fecha_corte,
       usuario_id,
       usuario_nombre,
+      revendedor_id || null,
+      (revendedor_nombre || null),
       parseFloat(total_ingresos) || 0,
       parseFloat(total_ganancias) || 0,
       parseFloat(total_revendedores) || 0,
@@ -167,9 +171,9 @@ router.post('/', async (req, res) => {
             const updateResult = await query(`
               UPDATE inventarios 
               SET fichas_vendidas = fichas_vendidas + ?,
-                  stock_actual = fichas_entregadas - (fichas_vendidas + ?)
+                  stock_actual = fichas_entregadas - fichas_vendidas
               WHERE revendedor_id = ? AND tipo_ficha_id = ?
-            `, [fichas_vendidas_nuevas, fichas_vendidas_nuevas, revendedor_id, tipo_ficha_id]);
+            `, [fichas_vendidas_nuevas, revendedor_id, tipo_ficha_id]);
             
             console.log(`✅ Inventario actualizado - Filas afectadas: ${updateResult.affectedRows}`);
             
@@ -198,6 +202,8 @@ router.post('/', async (req, res) => {
           fecha_corte,
           usuario_id,
           usuario_nombre,
+          revendedor_id,
+          revendedor_nombre,
           total_ingresos,
           total_ganancias,
           total_revendedores,
@@ -268,7 +274,7 @@ router.get('/mis-cortes', authenticateToken, async (req, res) => {
       } else {
         // Si no tiene comisión específica, obtener de la configuración global
         const configResult = await query(`
-          SELECT valor FROM configuracion WHERE clave = 'porcentaje_ganancia_creador' AND activo = 1
+          SELECT valor FROM configuraciones WHERE clave = 'porcentaje_ganancia_creador'
         `);
         
         if (configResult.length > 0 && !isNaN(parseFloat(configResult[0].valor))) {
