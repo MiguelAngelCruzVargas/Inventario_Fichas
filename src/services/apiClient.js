@@ -57,7 +57,7 @@ const shouldThrottleRequest = (endpoint) => {
       requestThrottle.set(endpoint, now);
     } else {
       // En lugar de throttling duro, agregar delay pequeño y permitir
-      console.log(`⏳ Retrasando petición a ${endpoint} por ${300 - timeDiff}ms`);
+  if (import.meta.env.DEV) console.log(`⏳ Retrasando petición a ${endpoint} por ${300 - timeDiff}ms`);
       return false; // No throttlear, solo logear
     }
     

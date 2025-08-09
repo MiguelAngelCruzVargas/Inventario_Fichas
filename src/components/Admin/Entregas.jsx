@@ -214,13 +214,14 @@ const RevendedorCard = ({
                                     <div className="font-semibold text-lg text-blue-800 p-2 bg-blue-100 rounded">{entregadas}</div>
                                 </div>
                                 <div className="text-center">
-                                    <div className="text-gray-600 text-xs">Vendidas (Editable)</div>
+                                    <div className="text-gray-600 text-xs">Vendidas (Editable, acumulado)</div>
                                     <input
                                         type="text"
                                         inputMode="numeric"
                                         value={tempValue !== undefined ? tempValue : vendidas}
                                         onChange={(e) => handleVendidasChange(tipo.id, e.target.value)}
                                         className="w-full font-semibold text-lg text-green-800 bg-white rounded px-2 py-1 text-center border-2 border-green-300 focus:ring-2 focus:ring-green-400"
+                                        title={`Es un valor acumulado hasta hoy. No crea ventas ni afecta reportes hasta hacer un corte. Máximo permitido: ${entregadas}.`}
                                     />
                                 </div>
                                 <div className="text-center">

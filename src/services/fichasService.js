@@ -84,7 +84,7 @@ class FichasService {
   }
 
   async crearRevendedor(revendedorData) {
-    console.log('fichasService.crearRevendedor - datos recibidos:', revendedorData);
+  if (import.meta.env.DEV) console.log('fichasService.crearRevendedor - datos recibidos:', revendedorData);
     
     const payload = {
       nombre_negocio: revendedorData.nombre, // El campo 'nombre' del frontend va a 'nombre_negocio'
@@ -94,7 +94,7 @@ class FichasService {
       direccion: revendedorData.direccion || null
     };
     
-    console.log('fichasService.crearRevendedor - payload enviado:', payload);
+  if (import.meta.env.DEV) console.log('fichasService.crearRevendedor - payload enviado:', payload);
     
     return await apiHelpers.post(this.endpoints.revendedores, payload);
   }

@@ -102,7 +102,7 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await authService.getCurrentUser();
       
       if (currentUser) {
-        console.log('✅ Sesión renovada exitosamente');
+        if (import.meta.env.DEV) console.log('✅ Sesión renovada exitosamente');
         return true;
       } else {
         throw new Error('Sesión no válida');
@@ -146,7 +146,7 @@ export const AuthProvider = ({ children }) => {
           // Solo mostrar notificación si ha pasado más de 2 segundos desde el último cambio
           // Esto evita notificaciones spam por cookies compartidas
           if (timeDiff > 2000) {
-            console.log('🔄 Cambio de sesión detectado:', {
+            if (import.meta.env.DEV) console.log('🔄 Cambio de sesión detectado:', {
               anterior: { 
                 id: user.id, 
                 tipo: user.tipo_usuario, 
@@ -251,10 +251,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       setLoading(true);
-      console.log('🔐 Iniciando login con:', credentials.username);
+  if (import.meta.env.DEV) console.log('🔐 Iniciando login con:', credentials.username);
       
       const response = await authService.login(credentials);
-      console.log('✅ Respuesta del login:', response);
+  if (import.meta.env.DEV) console.log('✅ Respuesta del login:', response);
       
       // Setear el estado inmediatamente
       setUser(response.user);
@@ -262,12 +262,12 @@ export const AuthProvider = ({ children }) => {
       // Marcar que ya se hizo una verificación inicial después del login
       setInitialSessionCheck(true);
       
-      console.log('👤 Usuario configurado:', response.user);
-      console.log('🔑 Estado autenticado:', true);
+  if (import.meta.env.DEV) console.log('👤 Usuario configurado:', response.user);
+  if (import.meta.env.DEV) console.log('🔑 Estado autenticado:', true);
       
       // Configurar monitoreo de sesión si hay información de expiración
       if (response.expiresAt) {
-        console.log(`🕒 Sesión iniciada. Expira en: ${new Date(response.expiresAt).toLocaleString()}`);
+  if (import.meta.env.DEV) console.log(`🕒 Sesión iniciada. Expira en: ${new Date(response.expiresAt).toLocaleString()}`);
       }
       
       return { success: true, user: response.user };

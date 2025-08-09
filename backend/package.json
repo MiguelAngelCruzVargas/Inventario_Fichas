@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+  "dev": "nodemon server.js",
+  "migrate:cortes-revendedor": "node ./scripts/apply_revendedor_cortes_migration.js"
   },
   "keywords": [
     "fichas",

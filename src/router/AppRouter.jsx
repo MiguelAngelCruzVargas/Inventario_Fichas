@@ -56,7 +56,7 @@ const AppWrapper = ({ children }) => {
             break;
         }
         
-        console.log(`🔄 Auto-redirigiendo a ${redirectPath} para ${user.tipo_usuario}`);
+  if (import.meta.env.DEV) console.log(`🔄 Auto-redirigiendo a ${redirectPath} para ${user.tipo_usuario}`);
         navigate(redirectPath, { replace: true });
         dismissSessionChangeNotification(); // Limpiar la notificación después de redirigir
       }, 1500); // 1.5 segundos para que el usuario vea la notificación
@@ -139,7 +139,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 const DashboardRedirect = () => {
   const { user, loading, isAuthenticated } = useAuth();
 
-  console.log('🔀 DashboardRedirect - Estado actual:', {
+  if (import.meta.env.DEV) console.log('🔀 DashboardRedirect - Estado actual:', {
     loading,
     isAuthenticated,
     user: user ? {
@@ -151,30 +151,30 @@ const DashboardRedirect = () => {
   });
 
   if (loading) {
-    console.log('⏳ DashboardRedirect - Cargando...');
+  if (import.meta.env.DEV) console.log('⏳ DashboardRedirect - Cargando...');
     return <LoadingScreen />;
   }
 
   if (!isAuthenticated || !user) {
-    console.log('🚫 DashboardRedirect - No autenticado, redirigiendo a login');
+  if (import.meta.env.DEV) console.log('🚫 DashboardRedirect - No autenticado, redirigiendo a login');
     return <Navigate to="/login" replace />;
   }
 
   const userType = user?.tipo_usuario;
-  console.log(`🎯 DashboardRedirect - Redirigiendo usuario tipo "${userType}"`);
+  if (import.meta.env.DEV) console.log(`🎯 DashboardRedirect - Redirigiendo usuario tipo "${userType}"`);
 
   switch (userType) {
     case 'admin':
-      console.log('👑 Redirigiendo a /admin');
+  if (import.meta.env.DEV) console.log('👑 Redirigiendo a /admin');
       return <Navigate to="/admin" replace />;
     case 'revendedor':
-      console.log('🏢 Redirigiendo a /revendedor');
+  if (import.meta.env.DEV) console.log('🏢 Redirigiendo a /revendedor');
       return <Navigate to="/revendedor" replace />;
     case 'trabajador':
-      console.log('🔧 Redirigiendo a /trabajador');
+  if (import.meta.env.DEV) console.log('🔧 Redirigiendo a /trabajador');
       return <Navigate to="/trabajador" replace />;
     default:
-      console.log(`❓ Tipo de usuario desconocido: "${userType}", redirigiendo a login`);
+  if (import.meta.env.DEV) console.log(`❓ Tipo de usuario desconocido: "${userType}", redirigiendo a login`);
       return <Navigate to="/login" replace />;
   }
 };

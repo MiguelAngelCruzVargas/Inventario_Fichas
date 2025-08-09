@@ -474,72 +474,49 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
   }
 });
 
-// PATCH /revendedores/:id/estado - Activar / desactivar (soft toggle)
-router.patch('/:id/estado', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { activo } = req.body; // boolean esperado
-
-    if (activo === undefined) {
-      return res.status(400).json({ error: 'Campo "activo" requerido (true/false)' });
-    }
-
-    const rev = await query('SELECT id, activo FROM revendedores WHERE id = ?', [id]);
-    if (!rev.length) return res.status(404).json({ error: 'Revendedor no encontrado' });
-
-    await query('UPDATE revendedores SET activo = ? WHERE id = ?', [activo ? 1 : 0, id]);
-    // Mantener sincronizado el usuario principal asociado
-    await query('UPDATE usuarios SET activo = ? WHERE revendedor_id = ?', [activo ? 1 : 0, id]);
-
-    res.json({ success: true, id: parseInt(id), activo: !!activo, message: `Revendedor ${activo ? 'activado' : 'desactivado'} correctamente` });
-  } catch (error) {
-    console.error('Error al cambiar estado de revendedor:', error);
-    res.status(500).json({ error: 'Error interno del servidor', detail: 'Error al cambiar estado del revendedor' });
-  }
-});
-
-// DELETE /revendedores/:id - Eliminación PERMANENTE (hard delete)
-// Se usa cuando el admin realmente desea borrar todos los datos.
+// DELETE /revendedores/:id - Eliminar revendedor (soft delete)
 router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
-  const connection = await db.getConnection();
   try {
     const { id } = req.params;
 
-    await connection.beginTransaction();
+    // Verificar que el revendedor existe
+    const revendedor = await query(
+      'SELECT id, nombre FROM revendedores WHERE id = ? AND activo = 1',
+      [id]
+    );
 
-    const rev = await query('SELECT id, nombre_negocio FROM revendedores WHERE id = ?', [id]);
-    if (!rev.length) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'Revendedor no encontrado' });
+    if (!revendedor || revendedor.length === 0) {
+      return res.status(404).json({
+        error: 'Revendedor no encontrado'
+      });
     }
 
-    // Borrar datos dependientes (inventarios, precios, entregas, ventas) antes de revendedor
-    // Asumiendo claves foráneas sin ON DELETE CASCADE actualmente.
-    await query('DELETE FROM inventarios WHERE revendedor_id = ?', [id]);
-    await query('DELETE FROM precios WHERE revendedor_id = ?', [id]);
-    await query('DELETE FROM entregas WHERE revendedor_id = ?', [id]);
-    await query('DELETE FROM ventas WHERE revendedor_id = ?', [id]);
+    // Desactivar revendedor (soft delete)
+    await query(`
+      UPDATE revendedores 
+      SET activo = 0 
+      WHERE id = ?
+    `, [id]);
 
-    // Borrar usuario(s) asociados
-    await query('DELETE FROM usuarios WHERE revendedor_id = ?', [id]);
-
-    // Finalmente borrar revendedor
-    await query('DELETE FROM revendedores WHERE id = ?', [id]);
-
-    await connection.commit();
+    // También desactivar todos los usuarios asociados al revendedor
+    await query(`
+      UPDATE usuarios 
+      SET activo = 0
+      WHERE revendedor_id = ?
+    `, [id]);
 
     res.json({
-      success: true,
+      message: 'Revendedor eliminado correctamente',
       id: parseInt(id),
-      message: 'Revendedor eliminado permanentemente',
-      nombre_negocio: rev[0].nombre_negocio
+      nombre: revendedor[0].nombre
     });
+
   } catch (error) {
-    await connection.rollback();
-    console.error('Error en hard delete de revendedor:', error);
-    res.status(500).json({ error: 'Error interno del servidor', detail: 'Error al eliminar permanentemente el revendedor' });
-  } finally {
-    connection.release();
+    console.error('Error al eliminar revendedor:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      detail: 'Error al eliminar el revendedor'
+    });
   }
 });
 

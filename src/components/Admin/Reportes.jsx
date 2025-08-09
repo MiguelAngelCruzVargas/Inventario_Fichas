@@ -4,7 +4,7 @@ import { FileText, Calendar, Download, BarChart2, TrendingUp, Users, Filter } fr
 import { apiClient } from '../../services/apiClient';
 import {
   ResponsiveContainer, BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  LineChart as RLineChart, Line, CartesianGrid
+  LineChart as RLineChart, Line, CartesianGrid, LabelList
 } from 'recharts';
 
 const Reportes = () => {
@@ -14,6 +14,7 @@ const Reportes = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -35,6 +36,17 @@ const Reportes = () => {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Detectar modo móvil para ajustar layout/leyendas/ticks
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const handler = (e) => setIsMobile(e.matches);
+    handler(mq);
+    mq.addEventListener ? mq.addEventListener('change', handler) : mq.addListener(handler);
+    return () => {
+      mq.removeEventListener ? mq.removeEventListener('change', handler) : mq.removeListener(handler);
+    };
   }, []);
 
   const exportCSV = async () => {
@@ -126,22 +138,22 @@ const Reportes = () => {
         {loading && <div className="p-3">Cargando…</div>}
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-xl border">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          <div className="bg-white p-3 md:p-4 rounded-xl border">
             <div className="text-gray-500 text-sm">Total Vendido</div>
-            <div className="text-2xl font-bold text-gray-900">${Number(tot.total_vendido || 0).toLocaleString('es-MX')}</div>
+            <div className="text-xl md:text-2xl font-bold text-gray-900">${Number(tot.total_vendido || 0).toLocaleString('es-MX')}</div>
           </div>
-          <div className="bg-white p-4 rounded-xl border">
+          <div className="bg-white p-3 md:p-4 rounded-xl border">
             <div className="text-gray-500 text-sm">Mi Ganancia (Admin)</div>
-            <div className="text-2xl font-bold text-emerald-700">${Number(tot.total_admin || 0).toLocaleString('es-MX')}</div>
+            <div className="text-xl md:text-2xl font-bold text-emerald-700">${Number(tot.total_admin || 0).toLocaleString('es-MX')}</div>
           </div>
-          <div className="bg-white p-4 rounded-xl border">
+          <div className="bg-white p-3 md:p-4 rounded-xl border">
             <div className="text-gray-500 text-sm">Para Revendedores</div>
-            <div className="text-2xl font-bold text-amber-700">${Number(tot.total_revendedor || 0).toLocaleString('es-MX')}</div>
+            <div className="text-xl md:text-2xl font-bold text-amber-700">${Number(tot.total_revendedor || 0).toLocaleString('es-MX')}</div>
           </div>
-          <div className="bg-white p-4 rounded-xl border">
+          <div className="bg-white p-3 md:p-4 rounded-xl border">
             <div className="text-gray-500 text-sm">Unidades Vendidas</div>
-            <div className="text-2xl font-bold text-gray-900">{Number(tot.total_unidades || 0).toLocaleString('es-MX')}</div>
+            <div className="text-xl md:text-2xl font-bold text-gray-900">{Number(tot.total_unidades || 0).toLocaleString('es-MX')}</div>
           </div>
         </div>
 
@@ -149,38 +161,77 @@ const Reportes = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-2 text-gray-700 font-medium"><BarChart2 className="w-4 h-4"/>Ventas por Mes</div>
-            <div className="w-full h-64">
+            <div className="w-full" style={{ height: isMobile ? 220 : 256 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <RBarChart data={serieMes} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <RBarChart data={serieMes} margin={{ top: 10, right: 16, left: 0, bottom: isMobile ? 20 : 0 }} barCategoryGap={isMobile ? '20%' : '10%'}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="periodo" />
-                  <YAxis />
-                  <Tooltip formatter={(v, n) => n === 'unidades' ? [`${v} u`, 'unidades'] : [`$${Number(v).toLocaleString('es-MX')}`, n]} />
-                  <Legend />
-                  <Bar dataKey="vendido" name="Vendido" fill="#3b82f6" radius={[4,4,0,0]} />
-                  <Bar dataKey="admin" name="Ganancia Admin" fill="#10b981" radius={[4,4,0,0]} />
-                  <Bar dataKey="revendedores" name="Para Revendedores" fill="#f59e0b" radius={[4,4,0,0]} />
-                  <Bar dataKey="unidades" name="Unidades" fill="#6b7280" radius={[4,4,0,0]} />
+                  <XAxis dataKey="periodo" tick={{ fontSize: isMobile ? 10 : 12 }} angle={isMobile ? -35 : 0} dy={isMobile ? 10 : 0} height={isMobile ? 40 : 30} interval={isMobile ? 0 : 'preserveEnd'} />
+                  <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 30 : 40} />
+                  <Tooltip isAnimationActive={!isMobile} formatter={(v, n) => n === 'unidades' ? [`${v} u`, 'unidades'] : [`$${Number(v).toLocaleString('es-MX')}`, n]} />
+                  {!isMobile && <Legend />}
+                  <Bar dataKey="vendido" name="Vendido" fill="#3b82f6" radius={[4,4,0,0]}>
+                    {isMobile && <LabelList dataKey="vendido" position="top" formatter={(v)=>`$${Number(v).toLocaleString('es-MX')}`} fontSize={10} />}
+                  </Bar>
+                  <Bar dataKey="admin" name="Ganancia Admin" fill="#10b981" radius={[4,4,0,0]}>
+                    {isMobile && <LabelList dataKey="admin" position="top" formatter={(v)=>`$${Number(v).toLocaleString('es-MX')}`} fontSize={10} />}
+                  </Bar>
+                  <Bar dataKey="revendedores" name="Para Revendedores" fill="#f59e0b" radius={[4,4,0,0]}>
+                    {isMobile && <LabelList dataKey="revendedores" position="top" formatter={(v)=>`$${Number(v).toLocaleString('es-MX')}`} fontSize={10} />}
+                  </Bar>
+                  <Bar dataKey="unidades" name="Unidades" fill="#6b7280" radius={[4,4,0,0]}>
+                    {isMobile && <LabelList dataKey="unidades" position="top" formatter={(v)=>`${v} u`} fontSize={10} />}
+                  </Bar>
                 </RBarChart>
               </ResponsiveContainer>
             </div>
+            {/* Detalle compacto para móvil */}
+            {isMobile && (
+              <div className="mt-3 space-y-2 sm:hidden">
+                {serieMes.map((row) => (
+                  <div key={row.periodo} className="text-xs bg-gray-50 border rounded-lg p-2">
+                    <div className="font-medium text-gray-800 mb-1">{row.periodo}</div>
+                    <div className="grid grid-cols-2 gap-1 text-gray-600">
+                      <div>Vendido: <span className="text-gray-900 font-semibold">${Number(row.vendido).toLocaleString('es-MX')}</span></div>
+                      <div>Admin: <span className="text-gray-900 font-semibold">${Number(row.admin).toLocaleString('es-MX')}</span></div>
+                      <div>Rev.: <span className="text-gray-900 font-semibold">${Number(row.revendedores).toLocaleString('es-MX')}</span></div>
+                      <div>Unid.: <span className="text-gray-900 font-semibold">{Number(row.unidades).toLocaleString('es-MX')}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-2 text-gray-700 font-medium"><TrendingUp className="w-4 h-4"/>Ventas por Semana</div>
-            <div className="w-full h-64">
+            <div className="w-full" style={{ height: isMobile ? 220 : 256 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <RLineChart data={serieSemana} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <RLineChart data={serieSemana} margin={{ top: 10, right: 16, left: 0, bottom: isMobile ? 20 : 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="periodo" />
-                  <YAxis />
-                  <Tooltip formatter={(v) => `$${Number(v).toLocaleString('es-MX')}`} />
-                  <Legend />
-                  <Line type="monotone" dataKey="vendido" name="Vendido" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="admin" name="Ganancia Admin" stroke="#10b981" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="revendedores" name="Para Revendedores" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  <XAxis dataKey="periodo" tick={{ fontSize: isMobile ? 10 : 12 }} angle={isMobile ? -35 : 0} dy={isMobile ? 10 : 0} height={isMobile ? 40 : 30} interval={isMobile ? 0 : 'preserveEnd'} />
+                  <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 30 : 40} />
+                  <Tooltip isAnimationActive={!isMobile} formatter={(v) => `$${Number(v).toLocaleString('es-MX')}`} />
+                  {!isMobile && <Legend />}
+                  <Line type="monotone" dataKey="vendido" name="Vendido" stroke="#3b82f6" strokeWidth={2} dot={isMobile} activeDot={{ r: isMobile ? 4 : 3 }} />
+                  <Line type="monotone" dataKey="admin" name="Ganancia Admin" stroke="#10b981" strokeWidth={2} dot={isMobile} activeDot={{ r: isMobile ? 4 : 3 }} />
+                  <Line type="monotone" dataKey="revendedores" name="Para Revendedores" stroke="#f59e0b" strokeWidth={2} dot={isMobile} activeDot={{ r: isMobile ? 4 : 3 }} />
                 </RLineChart>
               </ResponsiveContainer>
             </div>
+            {/* Detalle compacto para móvil */}
+            {isMobile && (
+              <div className="mt-3 space-y-2 sm:hidden">
+                {serieSemana.map((row) => (
+                  <div key={row.periodo} className="text-xs bg-gray-50 border rounded-lg p-2">
+                    <div className="font-medium text-gray-800 mb-1">{row.periodo}</div>
+                    <div className="grid grid-cols-2 gap-1 text-gray-600">
+                      <div>Vendido: <span className="text-gray-900 font-semibold">${Number(row.vendido).toLocaleString('es-MX')}</span></div>
+                      <div>Admin: <span className="text-gray-900 font-semibold">${Number(row.admin).toLocaleString('es-MX')}</span></div>
+                      <div>Rev.: <span className="text-gray-900 font-semibold">${Number(row.revendedores).toLocaleString('es-MX')}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

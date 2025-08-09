@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Info
 } from 'lucide-react';
+import { fichasService } from '../../services/fichasService';
 
 // --- FUNCIÓN DE FORMATO DE FECHA ---
 const formatearFechaSegura = (fecha, conHora = false) => {
@@ -142,6 +143,8 @@ const CorteCaja = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [errores, setErrores] = useState({});
   const [expandirDetalles, setExpandirDetalles] = useState(false);
+  const [porcentajeAdmin, setPorcentajeAdmin] = useState(20); // % del creador/admin
+  const [porcentajeRevendedor, setPorcentajeRevendedor] = useState(80);
   
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {} });
@@ -164,6 +167,31 @@ const CorteCaja = () => {
 
   useEffect(() => {
     if (revendedorSeleccionado) {
+      // Determinar porcentajes a usar: primero específico del revendedor, si no, configuración global
+      const pct = Number(revendedorSeleccionado.porcentaje_comision);
+      if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+        setPorcentajeAdmin(pct);
+        setPorcentajeRevendedor(100 - pct);
+      } else {
+        // Intentar obtener de configuración global
+        (async () => {
+          try {
+            const conf = await fichasService.obtenerConfiguracionClave('porcentaje_ganancia_creador');
+            const valor = Number(conf?.valor);
+            if (Number.isFinite(valor) && valor >= 0 && valor <= 100) {
+              setPorcentajeAdmin(valor);
+              setPorcentajeRevendedor(100 - valor);
+            } else {
+              setPorcentajeAdmin(20);
+              setPorcentajeRevendedor(80);
+            }
+          } catch (e) {
+            setPorcentajeAdmin(20);
+            setPorcentajeRevendedor(80);
+          }
+        })();
+      }
+
       const ventasIniciales = {};
       (tiposFicha || []).forEach(tipoObj => {
         const tipoNombre = typeof tipoObj === 'object' ? tipoObj.nombre : tipoObj;
@@ -235,8 +263,7 @@ const CorteCaja = () => {
     });
     const totalVendido = resumenPorTipo.reduce((sum, r) => sum + r.valorVendido, 0);
     const totalFichasVendidas = resumenPorTipo.reduce((sum, r) => sum + r.vendidas, 0);
-    const PORCENTAJE_GANANCIA_CREADOR = 20;
-    const totalGananciaCreador = totalVendido * (PORCENTAJE_GANANCIA_CREADOR / 100);
+    const totalGananciaCreador = totalVendido * (porcentajeAdmin / 100);
     const totalGananciaRevendedor = totalVendido - totalGananciaCreador;
     return {
       resumenPorTipo,
@@ -244,7 +271,7 @@ const CorteCaja = () => {
       totalGananciaCreador,
       totalGananciaRevendedor,
       totalFichasVendidas,
-      porcentajeGananciaCreador: PORCENTAJE_GANANCIA_CREADOR,
+      porcentajeGananciaCreador: porcentajeAdmin,
     };
   };
 
@@ -530,7 +557,7 @@ const CorteCaja = () => {
                             <div className="space-y-4">
                                 <div className="p-4 bg-blue-50 rounded-xl flex justify-between items-center"><p className="font-medium text-blue-800">Total Vendido</p><p className="text-2xl font-bold text-blue-900">${(resumen?.totalVendido || 0).toLocaleString('es-MX')}</p></div>
                                 <div className="p-4 bg-emerald-50 rounded-xl flex justify-between items-center"><p className="font-medium text-emerald-800">Mi Ganancia ({resumen?.porcentajeGananciaCreador}%)</p><p className="text-xl font-bold text-emerald-900">${(resumen?.totalGananciaCreador || 0).toLocaleString('es-MX')}</p></div>
-                                <div className="p-4 bg-amber-50 rounded-xl flex justify-between items-center"><p className="font-medium text-amber-800">Para Revendedor</p><p className="text-xl font-bold text-amber-900">${(resumen?.totalGananciaRevendedor || 0).toLocaleString('es-MX')}</p></div>
+                                        <div className="p-4 bg-amber-50 rounded-xl flex justify-between items-center"><p className="font-medium text-amber-800">Para Revendedor ({(100 - (resumen?.porcentajeGananciaCreador || 0))}%)</p><p className="text-xl font-bold text-amber-900">${(resumen?.totalGananciaRevendedor || 0).toLocaleString('es-MX')}</p></div>
                             </div>
                         </div>
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-3">

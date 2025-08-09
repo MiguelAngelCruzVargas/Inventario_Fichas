@@ -42,7 +42,7 @@ const Dashboard = () => {
 
     // Si ya hay datos en cache de UsersContext, usarlos inmediatamente y NO disparar fetch
     if (cachedDashboardData) {
-      console.log('⚡ Usando datos cacheados del dashboard (sin nueva llamada)');
+    if (import.meta.env.DEV) console.log('⚡ Usando datos cacheados del dashboard (sin nueva llamada)');
       setDashboardData(prev => ({
         ...prev,
         ...cachedDashboardData,
@@ -55,7 +55,7 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         setDashboardData(prev => ({ ...prev, loading: true, error: null }));
-        console.log('� (fresh) Cargando datos del dashboard...');
+    if (import.meta.env.DEV) console.log('� (fresh) Cargando datos del dashboard...');
         const response = await apiClient.get('/dashboard/stats');
         if (response.data && response.data.success) {
           const data = response.data.data;
@@ -92,7 +92,7 @@ const Dashboard = () => {
 
   // Función para recargar datos manualmente
   const recargarDatos = async () => {
-    console.log('🔄 Recargando datos del dashboard manualmente...');
+  if (import.meta.env.DEV) console.log('🔄 Recargando datos del dashboard manualmente...');
     try {
       setDashboardData(prev => ({ ...prev, loading: true, error: null }));
       
@@ -114,7 +114,7 @@ const Dashboard = () => {
         });
         
         updateDashboardData(data);
-        console.log('✅ Datos del dashboard recargados exitosamente');
+  if (import.meta.env.DEV) console.log('✅ Datos del dashboard recargados exitosamente');
       }
     } catch (error) {
       console.error('❌ Error recargando datos:', error);
