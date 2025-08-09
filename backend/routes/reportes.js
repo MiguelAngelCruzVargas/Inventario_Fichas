@@ -27,8 +27,8 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
     if (revendedor_id) params.push(parseInt(revendedor_id));
     const whereDate = buildDateWhere('v.fecha_venta', fecha_desde, fecha_hasta, params);
 
-    // Totales generales
-    const totales = await query(`
+  // Totales generales (ventas)
+  const totalesVentas = await query(`
       SELECT 
         COALESCE(SUM(v.subtotal),0) AS total_vendido,
         COALESCE(SUM(v.comision_total),0) AS total_revendedor,
@@ -40,7 +40,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
 
     // Serie mensual (YYYY-MM)
     const paramsMes = [...params];
-    const porMes = await query(`
+  const porMesVentas = await query(`
       SELECT 
         DATE_FORMAT(v.fecha_venta, '%Y-%m') AS periodo,
         COALESCE(SUM(v.subtotal),0) AS total_vendido,
@@ -55,7 +55,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
 
     // Serie semanal (ISO YEAR-WEEK)
     const paramsSem = [...params];
-    const porSemana = await query(`
+  const porSemanaVentas = await query(`
       SELECT 
         CONCAT(YEAR(v.fecha_venta), '-W', LPAD(WEEK(v.fecha_venta, 3), 2, '0')) AS periodo,
         COALESCE(SUM(v.subtotal),0) AS total_vendido,
@@ -70,7 +70,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
 
     // Top tipos de ficha (por cantidad)
     const paramsTipos = [...params];
-    const topTipos = await query(`
+  const topTipos = await query(`
       SELECT 
         tf.id AS tipo_ficha_id,
         tf.nombre AS tipo,
@@ -103,10 +103,93 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       LIMIT ${parseInt(limit) || 5}
     `, paramsRev);
 
+    // Complementar datos con cortes de caja cuando NO hay filtro por revendedor (la tabla cortes_caja no guarda revendedor_id)
+    let totales = { ...(totalesVentas[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 }) };
+    let porMes = [...porMesVentas];
+    let porSemana = [...porSemanaVentas];
+
+    if (!revendedor_id) {
+      const paramsCortes = [];
+      const whereDateCortes = buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortes);
+
+      // Totales de cortes
+      const totalesCortes = await query(`
+        SELECT 
+          COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
+          COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
+          COALESCE(SUM(c.total_ganancias),0) AS total_admin
+        FROM cortes_caja c
+        WHERE 1=1 ${whereDateCortes}
+      `, paramsCortes);
+
+      // Series mensuales y semanales de cortes
+      const paramsCortesMes = [...paramsCortes];
+      const porMesCortes = await query(`
+        SELECT 
+          DATE_FORMAT(c.fecha_corte, '%Y-%m') AS periodo,
+          COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
+          COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
+          COALESCE(SUM(c.total_ganancias),0) AS total_admin,
+          0 AS unidades
+        FROM cortes_caja c
+        WHERE 1=1 ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortesMes)}
+        GROUP BY DATE_FORMAT(c.fecha_corte, '%Y-%m')
+        ORDER BY periodo ASC
+      `, paramsCortesMes);
+
+      const paramsCortesSem = [...paramsCortes];
+      const porSemanaCortes = await query(`
+        SELECT 
+          CONCAT(YEAR(c.fecha_corte), '-W', LPAD(WEEK(c.fecha_corte, 3), 2, '0')) AS periodo,
+          COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
+          COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
+          COALESCE(SUM(c.total_ganancias),0) AS total_admin,
+          0 AS unidades
+        FROM cortes_caja c
+        WHERE 1=1 ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortesSem)}
+        GROUP BY YEAR(c.fecha_corte), WEEK(c.fecha_corte, 3)
+        ORDER BY MIN(c.fecha_corte) ASC
+      `, paramsCortesSem);
+
+      // Acumular totales
+      const tC = totalesCortes[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0 };
+      totales.total_vendido = Number(totales.total_vendido || 0) + Number(tC.total_vendido || 0);
+      totales.total_revendedor = Number(totales.total_revendedor || 0) + Number(tC.total_revendedor || 0);
+      totales.total_admin = Number(totales.total_admin || 0) + Number(tC.total_admin || 0);
+      // total_unidades se mantiene desde ventas (no contamos unidades desde cortes)
+
+      // Helper para fusionar series por periodo
+      const mergeSeries = (a, b) => {
+        const map = new Map();
+        for (const row of a) {
+          map.set(row.periodo, { ...row, total_vendido: Number(row.total_vendido || 0), total_revendedor: Number(row.total_revendedor || 0), total_admin: Number(row.total_admin || 0), unidades: Number(row.unidades || 0) });
+        }
+        for (const row of b) {
+          const prev = map.get(row.periodo) || { periodo: row.periodo, total_vendido: 0, total_revendedor: 0, total_admin: 0, unidades: 0 };
+          map.set(row.periodo, {
+            periodo: row.periodo,
+            total_vendido: Number(prev.total_vendido) + Number(row.total_vendido || 0),
+            total_revendedor: Number(prev.total_revendedor) + Number(row.total_revendedor || 0),
+            total_admin: Number(prev.total_admin) + Number(row.total_admin || 0),
+            unidades: Number(prev.unidades || 0) + Number(row.unidades || 0)
+          });
+        }
+        return Array.from(map.values()).sort((x,y)=> (x.periodo>y.periodo?1:-1));
+      };
+
+      porMes = mergeSeries(porMesVentas, porMesCortes);
+      porSemana = mergeSeries(porSemanaVentas, porSemanaCortes);
+    } else {
+      // Con filtro por revendedor, devolvemos solo datos de ventas (cortes no distinguen revendedor)
+      porMes = porMesVentas;
+      porSemana = porSemanaVentas;
+      totales = { ...(totalesVentas[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 }) };
+    }
+
     res.json({
       success: true,
       filtros: { fecha_desde, fecha_hasta, revendedor_id },
-      totales: totales[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 },
+      totales,
       por_mes: porMes,
       por_semana: porSemana,
       top_tipos: topTipos,
