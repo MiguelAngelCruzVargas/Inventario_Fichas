@@ -299,7 +299,8 @@ router.get('/export', authenticateToken, requireRole(['admin']), async (req, res
     if (revendedor_id) params.push(parseInt(revendedor_id));
     const whereDate = buildDateWhere('v.fecha_venta', fecha_desde, fecha_hasta, params);
 
-    const rows = await query(`
+    // 1) Ventas detalladas
+    const rowsVentas = await query(`
       SELECT 
         v.fecha_venta,
         r.nombre_negocio AS revendedor,
@@ -317,11 +318,71 @@ router.get('/export', authenticateToken, requireRole(['admin']), async (req, res
       ORDER BY v.fecha_venta DESC
     `, params);
 
+    // 2) Cortes detallados (expandir detalle_tipos)
+    const paramsC = [];
+    const whereDateC = buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsC);
+    const cortes = await query(`
+      SELECT c.fecha_corte, c.detalle_tipos, c.observaciones
+      FROM cortes_caja c
+      WHERE 1=1 ${whereDateC}
+      ORDER BY c.fecha_corte DESC
+    `, paramsC);
+
+    // Obtener porcentaje admin por revendedor (si logramos inferir nombre)
+    const getPorcentajeAdmin = async (nombre) => {
+      if (!nombre) return null;
+      try {
+        const r = await query(`SELECT porcentaje_comision FROM revendedores WHERE nombre_negocio = ? OR nombre = ? LIMIT 1`, [nombre, nombre]);
+        if (r.length && r[0].porcentaje_comision != null) return parseFloat(r[0].porcentaje_comision);
+      } catch {}
+      return null;
+    };
+
+    // Porcentaje global fallback
+    let pctGlobal = 20;
+    try {
+      const cfg = await query(`SELECT valor FROM configuraciones WHERE clave = 'porcentaje_ganancia_creador' LIMIT 1`);
+      if (cfg.length && !isNaN(parseFloat(cfg[0].valor))) pctGlobal = parseFloat(cfg[0].valor);
+    } catch {}
+
+    const rowsCortes = [];
+    for (const c of cortes) {
+      let detalles = [];
+      try { detalles = typeof c.detalle_tipos === 'string' ? JSON.parse(c.detalle_tipos || '[]') : (c.detalle_tipos || []); } catch { detalles = []; }
+      const obs = c.observaciones || '';
+      // extraer nombre: "Corte para X"
+      const m = obs.match(/Corte\s+para\s+(.+)/i);
+      const nombre = m ? m[1].trim() : '';
+      const pctAdmin = (await getPorcentajeAdmin(nombre)) ?? pctGlobal;
+      const factorAdmin = pctAdmin / 100;
+
+      for (const d of detalles) {
+        const cantidad = Number(d.vendidas || 0);
+        const precio = Number(d.precio || 0);
+        const subtotal = Number(d.valorVendido || d.valor_total || (cantidad * precio));
+        const gananciaAdmin = subtotal * factorAdmin;
+        const comisionTotal = subtotal - gananciaAdmin;
+        const comisionUnitaria = cantidad > 0 ? comisionTotal / cantidad : 0;
+        rowsCortes.push({
+          fecha_venta: c.fecha_corte,
+          revendedor: nombre,
+          tipo_ficha: d.tipo || d.tipo_ficha || 'Sin tipo',
+          cantidad,
+          precio_unitario: precio,
+          subtotal,
+          comision_unitaria: comisionUnitaria,
+          comision_total: comisionTotal,
+          ganancia_admin: gananciaAdmin
+        });
+      }
+    }
+
     const headers = [
       'fecha_venta','revendedor','tipo_ficha','cantidad','precio_unitario','subtotal','comision_unitaria','comision_total','ganancia_admin'
     ];
     const csvLines = [headers.join(',')];
-    for (const r of rows) {
+    const allRows = [...rowsVentas, ...rowsCortes];
+    for (const r of allRows) {
       const line = [
         r.fecha_venta ? new Date(r.fecha_venta).toISOString().slice(0,10) : '',
         (r.revendedor || '').replace(/[,\n\r]/g,' '),
