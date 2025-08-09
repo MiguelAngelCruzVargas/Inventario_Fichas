@@ -108,7 +108,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
     let porMes = [...porMesVentas];
     let porSemana = [...porSemanaVentas];
 
-    if (!revendedor_id) {
+  if (!revendedor_id) {
       const paramsCortes = [];
       const whereDateCortes = buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortes);
 
@@ -123,40 +123,90 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       `, paramsCortes);
 
       // Series mensuales y semanales de cortes
+      // Además necesitamos unidades por periodo y top tipos desde detalle_tipos (JSON)
+      const cortesDetalle = await query(`
+        SELECT c.fecha_corte, c.detalle_tipos
+        FROM cortes_caja c
+        WHERE 1=1 ${whereDateCortes}
+        ORDER BY c.fecha_corte ASC
+      `, paramsCortes);
+
+      // Estructuras de agregación
+      const unidadesPorMes = new Map();
+      const unidadesPorSemana = new Map();
+      const topTiposDesdeCortes = new Map(); // key: tipo
+
+      for (const row of cortesDetalle) {
+        const fecha = row.fecha_corte ? new Date(row.fecha_corte) : null;
+        let detalles = [];
+        try {
+          detalles = typeof row.detalle_tipos === 'string' ? JSON.parse(row.detalle_tipos || '[]') : (row.detalle_tipos || []);
+        } catch { detalles = []; }
+
+        const periodoMes = fecha ? `${fecha.getFullYear()}-${String(fecha.getMonth()+1).padStart(2,'0')}` : 'desconocido';
+        const week = fecha ? (function isoWeek(d){
+          const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+          const dayNum = (tmp.getUTCDay() + 6) % 7;
+          tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3);
+          const firstThursday = new Date(Date.UTC(tmp.getUTCFullYear(),0,4));
+          const weekNum = 1 + Math.round(((tmp - firstThursday)/86400000 - 3 + ((firstThursday.getUTCDay()+6)%7))/7);
+          return `${tmp.getUTCFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+        })(fecha) : 'desconocido';
+
+        let unidadesCorte = 0;
+        for (const det of detalles) {
+          const unidades = Number(det.vendidas || 0);
+          const totalVendidoDet = Number(det.valorVendido || det.valor_total || 0);
+          const tipo = det.tipo || det.tipo_ficha || 'Sin tipo';
+          unidadesCorte += unidades;
+
+          // Top tipos
+          const prev = topTiposDesdeCortes.get(tipo) || { unidades: 0, total_vendido: 0 };
+          topTiposDesdeCortes.set(tipo, { unidades: prev.unidades + unidades, total_vendido: prev.total_vendido + totalVendidoDet });
+        }
+
+        // Unidades por mes/semana
+        unidadesPorMes.set(periodoMes, (unidadesPorMes.get(periodoMes) || 0) + unidadesCorte);
+        unidadesPorSemana.set(week, (unidadesPorSemana.get(week) || 0) + unidadesCorte);
+      }
+
+      // Series por montos desde SQL + unidades desde JSON
       const paramsCortesMes = [...paramsCortes];
-      const porMesCortes = await query(`
+      const montosMes = await query(`
         SELECT 
           DATE_FORMAT(c.fecha_corte, '%Y-%m') AS periodo,
           COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
           COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
-          COALESCE(SUM(c.total_ganancias),0) AS total_admin,
-          0 AS unidades
+          COALESCE(SUM(c.total_ganancias),0) AS total_admin
         FROM cortes_caja c
         WHERE 1=1 ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortesMes)}
         GROUP BY DATE_FORMAT(c.fecha_corte, '%Y-%m')
         ORDER BY periodo ASC
       `, paramsCortesMes);
+      const porMesCortes = montosMes.map(m => ({ ...m, unidades: unidadesPorMes.get(m.periodo) || 0 }));
 
       const paramsCortesSem = [...paramsCortes];
-      const porSemanaCortes = await query(`
+      const montosSem = await query(`
         SELECT 
           CONCAT(YEAR(c.fecha_corte), '-W', LPAD(WEEK(c.fecha_corte, 3), 2, '0')) AS periodo,
           COALESCE(SUM(c.total_ingresos),0) AS total_vendido,
           COALESCE(SUM(c.total_revendedores),0) AS total_revendedor,
-          COALESCE(SUM(c.total_ganancias),0) AS total_admin,
-          0 AS unidades
+          COALESCE(SUM(c.total_ganancias),0) AS total_admin
         FROM cortes_caja c
         WHERE 1=1 ${buildDateWhere('c.fecha_corte', fecha_desde, fecha_hasta, paramsCortesSem)}
         GROUP BY YEAR(c.fecha_corte), WEEK(c.fecha_corte, 3)
         ORDER BY MIN(c.fecha_corte) ASC
       `, paramsCortesSem);
+      const porSemanaCortes = montosSem.map(m => ({ ...m, unidades: unidadesPorSemana.get(m.periodo) || 0 }));
 
       // Acumular totales
       const tC = totalesCortes[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0 };
       totales.total_vendido = Number(totales.total_vendido || 0) + Number(tC.total_vendido || 0);
       totales.total_revendedor = Number(totales.total_revendedor || 0) + Number(tC.total_revendedor || 0);
       totales.total_admin = Number(totales.total_admin || 0) + Number(tC.total_admin || 0);
-      // total_unidades se mantiene desde ventas (no contamos unidades desde cortes)
+  // total_unidades ahora incluye lo derivado de detalle_tipos de los cortes
+  const totalUnidadesCortes = Array.from(unidadesPorMes.values()).reduce((a,b)=>a+b,0);
+  totales.total_unidades = Number(totales.total_unidades || 0) + totalUnidadesCortes;
 
       // Helper para fusionar series por periodo
       const mergeSeries = (a, b) => {
@@ -179,6 +229,16 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
 
       porMes = mergeSeries(porMesVentas, porMesCortes);
       porSemana = mergeSeries(porSemanaVentas, porSemanaCortes);
+
+      // Si no hay ventas, enriquecer top_tipos con lo derivado de cortes
+      if ((topTipos?.length || 0) === 0 && topTiposDesdeCortes.size > 0) {
+        // Reemplazar top_tipos con los obtenidos de cortes
+        const arr = Array.from(topTiposDesdeCortes.entries()).map(([tipo, v]) => ({ tipo, unidades: v.unidades, total_vendido: v.total_vendido }));
+        arr.sort((a,b)=> b.unidades - a.unidades || b.total_vendido - a.total_vendido);
+        // Limit respect to query param
+        topTipos.length = 0; // clear reference
+        Array.prototype.push.apply(topTipos, arr.slice(0, parseInt(limit) || 5));
+      }
     } else {
       // Con filtro por revendedor, devolvemos solo datos de ventas (cortes no distinguen revendedor)
       porMes = porMesVentas;
