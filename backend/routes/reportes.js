@@ -85,9 +85,9 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
     `, paramsTipos);
 
     // Top revendedores (por total vendido)
-    const paramsRev = [];
-    const whereDate2 = buildDateWhere('v.fecha_venta', fecha_desde, fecha_hasta, paramsRev);
-    const topRevendedores = await query(`
+  const paramsRev = [];
+  const whereDate2 = buildDateWhere('v.fecha_venta', fecha_desde, fecha_hasta, paramsRev);
+  let topRevendedores = await query(`
       SELECT 
         r.id AS revendedor_id,
         COALESCE(r.nombre_negocio, r.nombre) AS nombre,
@@ -125,7 +125,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       // Series mensuales y semanales de cortes
       // Además necesitamos unidades por periodo y top tipos desde detalle_tipos (JSON)
       const cortesDetalle = await query(`
-        SELECT c.fecha_corte, c.detalle_tipos
+        SELECT c.fecha_corte, c.detalle_tipos, c.observaciones, c.total_ingresos, c.total_ganancias, c.total_revendedores
         FROM cortes_caja c
         WHERE 1=1 ${whereDateCortes}
         ORDER BY c.fecha_corte ASC
@@ -136,7 +136,10 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       const unidadesPorSemana = new Map();
       const topTiposDesdeCortes = new Map(); // key: tipo
 
-      for (const row of cortesDetalle) {
+  // Agregación para top clientes desde cortes (por nombre en observaciones)
+  const topRevFromCortes = new Map(); // key: nombre
+
+  for (const row of cortesDetalle) {
         const fecha = row.fecha_corte ? new Date(row.fecha_corte) : null;
         let detalles = [];
         try {
@@ -164,6 +167,18 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
           const prev = topTiposDesdeCortes.get(tipo) || { unidades: 0, total_vendido: 0 };
           topTiposDesdeCortes.set(tipo, { unidades: prev.unidades + unidades, total_vendido: prev.total_vendido + totalVendidoDet });
         }
+
+        // Top revendedores (estimado) por observaciones "Corte para X"
+        const obs = row.observaciones || '';
+        const m = obs.match(/Corte\s+para\s+(.+)/i);
+        const nombreCliente = m ? m[1].trim() : 'Sin nombre';
+        const prevR = topRevFromCortes.get(nombreCliente) || { total_vendido: 0, total_revendedor: 0, total_admin: 0, unidades: 0 };
+        topRevFromCortes.set(nombreCliente, {
+          total_vendido: prevR.total_vendido + Number(row.total_ingresos || 0),
+          total_revendedor: prevR.total_revendedor + Number(row.total_revendedores || 0),
+          total_admin: prevR.total_admin + Number(row.total_ganancias || 0),
+          unidades: prevR.unidades + unidadesCorte
+        });
 
         // Unidades por mes/semana
         unidadesPorMes.set(periodoMes, (unidadesPorMes.get(periodoMes) || 0) + unidadesCorte);
@@ -238,6 +253,20 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
         // Limit respect to query param
         topTipos.length = 0; // clear reference
         Array.prototype.push.apply(topTipos, arr.slice(0, parseInt(limit) || 5));
+      }
+
+      // Si top_revendedores está vacío, poblar desde cortes (estimado)
+      if ((topRevendedores?.length || 0) === 0 && topRevFromCortes.size > 0) {
+        const arrR = Array.from(topRevFromCortes.entries()).map(([nombre, v]) => ({
+          revendedor_id: null,
+          nombre,
+          total_vendido: v.total_vendido,
+          total_revendedor: v.total_revendedor,
+          total_admin: v.total_admin,
+          unidades: v.unidades
+        }));
+        arrR.sort((a,b)=> b.total_vendido - a.total_vendido);
+        topRevendedores = arrR.slice(0, parseInt(limit) || 5);
       }
     } else {
       // Con filtro por revendedor, devolvemos solo datos de ventas (cortes no distinguen revendedor)
