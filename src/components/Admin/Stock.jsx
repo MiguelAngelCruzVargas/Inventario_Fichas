@@ -104,6 +104,17 @@ const FormField = ({ label, children }) => (
 const StyledInput = (props) => (
   <input 
     {...props} 
+    onWheel={(e) => {
+      if (e.currentTarget.type === 'number') {
+        e.currentTarget.blur();
+        e.preventDefault();
+      }
+    }}
+    onKeyDown={(e) => {
+      if (e.currentTarget.type === 'number' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+      }
+    }}
     className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
     style={{
       MozAppearance: 'textfield'
