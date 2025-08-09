@@ -31,7 +31,8 @@ export const FichasProvider = ({ children }) => {
   const [tiposFicha, setTiposFicha] = useState([]);
   const [entregas, setEntregas] = useState([]);
   const [inventarios, setInventarios] = useState([]);
-  const [stockGlobal, setStockGlobal] = useState({});
+  // Debe ser array desde el inicio para evitar errores al hacer .map/.filter
+  const [stockGlobal, setStockGlobal] = useState([]);
   const [corteCaja, setCorteCaja] = useState({});
   const [historialCortes, setHistorialCortes] = useState([]);
   const [reportesFichas, setReportesFichas] = useState([]);

@@ -514,7 +514,8 @@ const Stock = () => {
 
   const uniqueStockGlobal = React.useMemo(() => {
     const seen = new Set();
-    return (stockGlobal || []).filter(it => it && !seen.has(it.tipo_ficha_id) && (seen.add(it.tipo_ficha_id), true));
+    const list = Array.isArray(stockGlobal) ? stockGlobal : [];
+    return list.filter(it => it && !seen.has(it.tipo_ficha_id) && (seen.add(it.tipo_ficha_id), true));
   }, [stockGlobal]);
 
   // Helper para generar una key segura cuando el id falta o es 0 duplicado
