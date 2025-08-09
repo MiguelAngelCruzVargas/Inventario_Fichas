@@ -2,40 +2,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FileText, Calendar, Download, BarChart2, TrendingUp, Users, Filter } from 'lucide-react';
 import { apiClient } from '../../services/apiClient';
-
-// Simple chart via inline SVG to avoid adding deps (bar/line minimal)
-function BarChart({ labels, values, color = '#3b82f6', height = 160 }) {
-  const max = Math.max(1, ...values);
-  const barWidth = labels.length ? (100 / labels.length) : 100;
-  return (
-    <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="w-full h-40">
-      {values.map((v, i) => {
-        const h = (v / max) * (height - 20);
-        const x = i * barWidth;
-        const y = height - h;
-        return (
-          <g key={i}>
-            <rect x={x + 2} y={y} width={barWidth - 4} height={h} fill={color} rx="2" />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function LineChart({ labels, values, color = '#10b981', height = 160 }) {
-  const max = Math.max(1, ...values);
-  const points = values.map((v, i) => {
-    const x = (i / Math.max(1, values.length - 1)) * 100;
-    const y = height - (v / max) * (height - 20);
-    return `${x},${y}`;
-  }).join(' ');
-  return (
-    <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="w-full h-40">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
-    </svg>
-  );
-}
+import {
+  ResponsiveContainer, BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  LineChart as RLineChart, Line, CartesianGrid
+} from 'recharts';
 
 const Reportes = () => {
   const [fechaDesde, setFechaDesde] = useState('');
@@ -91,6 +61,20 @@ const Reportes = () => {
   const topTipos = useMemo(() => (data?.top_tipos || []), [data]);
   const topRev = useMemo(() => (data?.top_revendedores || []), [data]);
   const tot = data?.totales || { total_vendido: 0, total_admin: 0, total_revendedor: 0, total_unidades: 0 };
+
+  const serieMes = useMemo(() => porMes.map(x => ({
+    periodo: x.periodo,
+    vendido: Number(x.total_vendido || 0),
+    admin: Number(x.total_admin || 0),
+    revendedores: Number(x.total_revendedor || 0),
+    unidades: Number(x.unidades || 0)
+  })), [porMes]);
+  const serieSemana = useMemo(() => porSemana.map(x => ({
+    periodo: x.periodo,
+    vendido: Number(x.total_vendido || 0),
+    admin: Number(x.total_admin || 0),
+    revendedores: Number(x.total_revendedor || 0)
+  })), [porSemana]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -165,11 +149,38 @@ const Reportes = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-2 text-gray-700 font-medium"><BarChart2 className="w-4 h-4"/>Ventas por Mes</div>
-            <BarChart labels={porMes.map(x=>x.periodo)} values={porMes.map(x=>Number(x.total_vendido))} />
+            <div className="w-full h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <RBarChart data={serieMes} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="periodo" />
+                  <YAxis />
+                  <Tooltip formatter={(v, n) => n === 'unidades' ? [`${v} u`, 'unidades'] : [`$${Number(v).toLocaleString('es-MX')}`, n]} />
+                  <Legend />
+                  <Bar dataKey="vendido" name="Vendido" fill="#3b82f6" radius={[4,4,0,0]} />
+                  <Bar dataKey="admin" name="Ganancia Admin" fill="#10b981" radius={[4,4,0,0]} />
+                  <Bar dataKey="revendedores" name="Para Revendedores" fill="#f59e0b" radius={[4,4,0,0]} />
+                  <Bar dataKey="unidades" name="Unidades" fill="#6b7280" radius={[4,4,0,0]} />
+                </RBarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-2 text-gray-700 font-medium"><TrendingUp className="w-4 h-4"/>Ventas por Semana</div>
-            <LineChart labels={porSemana.map(x=>x.periodo)} values={porSemana.map(x=>Number(x.total_vendido))} />
+            <div className="w-full h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <RLineChart data={serieSemana} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="periodo" />
+                  <YAxis />
+                  <Tooltip formatter={(v) => `$${Number(v).toLocaleString('es-MX')}`} />
+                  <Legend />
+                  <Line type="monotone" dataKey="vendido" name="Vendido" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="admin" name="Ganancia Admin" stroke="#10b981" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="revendedores" name="Para Revendedores" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                </RLineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
