@@ -128,31 +128,63 @@ router.post('/', async (req, res) => {
     console.log('🚀 Guardando corte de caja...');
 
     // 1. Guardar el corte de caja
-    const result = await query(`
-      INSERT INTO cortes_caja (
+    let result;
+    try {
+      // Intento con columnas nuevas (revendedor_id/nombre)
+      result = await query(`
+        INSERT INTO cortes_caja (
+          fecha_corte,
+          usuario_id,
+          usuario_nombre,
+          revendedor_id,
+          revendedor_nombre,
+          total_ingresos,
+          total_ganancias,
+          total_revendedores,
+          detalle_tipos,
+          observaciones
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
         fecha_corte,
         usuario_id,
         usuario_nombre,
-        revendedor_id,
-        revendedor_nombre,
-        total_ingresos,
-        total_ganancias,
-        total_revendedores,
-        detalle_tipos,
+        revendedor_id || null,
+        (revendedor_nombre || null),
+        parseFloat(total_ingresos) || 0,
+        parseFloat(total_ganancias) || 0,
+        parseFloat(total_revendedores) || 0,
+        detalleJson,
         observaciones
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      fecha_corte,
-      usuario_id,
-      usuario_nombre,
-      revendedor_id || null,
-      (revendedor_nombre || null),
-      parseFloat(total_ingresos) || 0,
-      parseFloat(total_ganancias) || 0,
-      parseFloat(total_revendedores) || 0,
-      detalleJson,
-      observaciones
-    ]);
+      ]);
+    } catch (e) {
+      // Compatibilidad: si la columna no existe aún, insertar con esquema antiguo
+      if (e?.code === 'ER_BAD_FIELD_ERROR' || /Unknown column 'revendedor_id'/.test(e?.message || '')) {
+        console.warn('⚠️ cortes_caja sin columnas de revendedor; guardando con esquema antiguo');
+        result = await query(`
+          INSERT INTO cortes_caja (
+            fecha_corte,
+            usuario_id,
+            usuario_nombre,
+            total_ingresos,
+            total_ganancias,
+            total_revendedores,
+            detalle_tipos,
+            observaciones
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          fecha_corte,
+          usuario_id,
+          usuario_nombre,
+          parseFloat(total_ingresos) || 0,
+          parseFloat(total_ganancias) || 0,
+          parseFloat(total_revendedores) || 0,
+          detalleJson,
+          observaciones
+        ]);
+      } else {
+        throw e;
+      }
+    }
 
     console.log('✅ Corte guardado con ID:', result.insertId);
 
@@ -202,8 +234,7 @@ router.post('/', async (req, res) => {
           fecha_corte,
           usuario_id,
           usuario_nombre,
-          revendedor_id,
-          revendedor_nombre,
+          /* columnas nuevas pueden no existir; seleccionarlas solo si existen */
           total_ingresos,
           total_ganancias,
           total_revendedores,

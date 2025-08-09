@@ -18,10 +18,27 @@ function buildDateWhere(field = 'v.fecha_venta', desde, hasta, params) {
   return parts.length ? `AND ${parts.join(' AND ')}` : '';
 }
 
+// Detecta si la tabla cortes_caja tiene revendedor_id/nombre (para compatibilidad de esquema)
+async function cortesTieneRevendedorCols() {
+  try {
+    const r = await query(`
+      SELECT 
+        SUM(CASE WHEN COLUMN_NAME='revendedor_id' THEN 1 ELSE 0 END) AS has_id,
+        SUM(CASE WHEN COLUMN_NAME='revendedor_nombre' THEN 1 ELSE 0 END) AS has_nombre
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cortes_caja' AND COLUMN_NAME IN ('revendedor_id','revendedor_nombre')
+    `);
+    return (r?.[0]?.has_id > 0 && r?.[0]?.has_nombre > 0);
+  } catch {
+    return false;
+  }
+}
+
 // GET /reportes/resumen - Totales y series (mes/semana/top)
 router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, revendedor_id, limit = 5 } = req.query;
+  const cortesConRevCols = await cortesTieneRevendedorCols();
     const params = [];
     const whereRev = revendedor_id ? 'AND v.revendedor_id = ?' : '';
     if (revendedor_id) params.push(parseInt(revendedor_id));
@@ -270,6 +287,19 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       }
     } else {
       // Con filtro por revendedor, incluir también cortes de ese revendedor si la tabla ya tiene revendedor_id
+      if (!cortesConRevCols) {
+        // No hay columnas en BD; no podemos incluir cortes filtrados por revendedor
+        return res.json({
+          success: true,
+          filtros: { fecha_desde, fecha_hasta, revendedor_id },
+          totales: (totalesVentas[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 }),
+          por_mes: porMesVentas,
+          por_semana: porSemanaVentas,
+          top_tipos: topTipos,
+          top_revendedores: topRevendedores
+        });
+      }
+      
       porMes = [...porMesVentas];
       porSemana = [...porSemanaVentas];
       totales = { ...(totalesVentas[0] || { total_vendido: 0, total_revendedor: 0, total_admin: 0, total_unidades: 0 }) };
