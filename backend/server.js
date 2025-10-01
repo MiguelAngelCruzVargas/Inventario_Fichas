@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import morgan from 'morgan';
+import morgan from 'morgan'; // temporal mientras validamos transición
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import { testConnection } from './database.js';
@@ -38,12 +38,14 @@ import geoRoutes from './routes/geo.js';
 import archiveRoutes from './routes/archive.js';
 import bus from './events/bus.js';
 import { sseManager } from './lib/sse.js';
+import { logger, httpLogger, logStartupContext, logUnhandledError } from './lib/logger.js';
 
 
 // Configurar variables de entorno
 dotenv.config();
 
 const app = express();
+logStartupContext();
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 
 // ==================================================
@@ -111,7 +113,8 @@ export const loginLimiter = rateLimit({
 // Middlewares globales
 app.use(helmet());
 app.use(limiter);
-app.use(morgan('combined'));
+// Sustituimos morgan por pino-http (se puede eliminar morgan del package en futuro commit)
+app.use(httpLogger);
 
 // Configurar CORS
 const corsOptions = {
@@ -158,15 +161,25 @@ app.use('/uploads', express.static(uploadsDir, {
   }
 }));
 
-// Middleware para logging personalizado
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
+// Eliminado logging manual redundante; pino-http cubre request/response
 
 // Rutas de health check
 app.get('/', (req, res) => {
   res.json({ message: 'Sistema de Fichas WiFi API', version: '1.0.0', status: 'online' });
+});
+
+// Endpoints de liveness y readiness separados para orquestadores
+app.get('/live', (req, res) => {
+  res.json({ live: true, uptime: process.uptime() });
+});
+app.get('/ready', async (req, res) => {
+  try {
+    const dbConnected = await testConnection();
+    if (!dbConnected) return res.status(503).json({ ready: false, database: 'disconnected' });
+    res.json({ ready: true, database: 'connected' });
+  } catch (e) {
+    res.status(503).json({ ready: false, error: e.message });
+  }
 });
 
 app.get('/health', async (req, res) => {
@@ -207,9 +220,9 @@ app.use('/api/catalogo', catalogoRoutes);
 app.use('/api/geo', geoRoutes);
 if (process.env.ENABLE_DATA_EXPORT === '1') {
   app.use('/api/admin/archive', archiveRoutes);
-  console.log('🛡️ Archive module ENABLED');
+  logger.info('Archive module ENABLED');
 } else {
-  console.log('🛡️ Archive module disabled');
+  logger.info('Archive module disabled');
 }
 
 // SSE stream for realtime updates (tareas, notas, entregas...)
@@ -275,7 +288,7 @@ app.use('*', (req, res) => {
 
 // Middleware global para manejo de errores
 app.use((error, req, res, next) => {
-  console.error('Error no manejado:', error);
+  logger.error({ err: error }, 'Error no manejado');
   if (error.message === 'No permitido por CORS') {
     return res.status(403).json({ error: 'CORS Error', detail: 'Tu origen no está permitido' });
   }
@@ -295,10 +308,10 @@ const startServer = async () => {
     if (!dbConnected) {
       const isProd = process.env.NODE_ENV === 'production';
       if (isProd) {
-        console.error('❌ No se pudo conectar a la base de datos. Verifica la configuración en .env');
+  logger.error('No se pudo conectar a la base de datos. Verifica la configuración en .env');
         process.exit(1);
       } else {
-        console.warn('⚠️ No se pudo conectar a la base de datos. Continuando en modo degradado (solo endpoints tolerantes, p.ej. /api/configuracion/branding)');
+  logger.warn('No se pudo conectar a la base de datos. Modo degradado (solo endpoints tolerantes)');
       }
     }
     // Intentar levantar el servidor con fallback de puerto en desarrollo si está ocupado
@@ -308,7 +321,7 @@ const startServer = async () => {
       server.on('error', (err) => {
         if (!isProd && err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
           const nextPort = (port === PORT) ? 3001 : (port + 1);
-          console.warn(`⚠️ Puerto ${port} en uso. Intentando con ${nextPort}...`);
+          logger.warn({ port, nextPort }, 'Puerto en uso, reintentando');
           setTimeout(() => {
             tryListen(nextPort, attemptsLeft - 1).then(resolve).catch(reject);
           }, 200);
@@ -320,25 +333,32 @@ const startServer = async () => {
 
     try {
       const { port: boundPort } = await tryListen(PORT);
-      console.log(`\n🚀 Servidor iniciado en http://localhost:${boundPort} [Entorno: ${process.env.NODE_ENV || 'development'}]`);
+      logger.info({ port: boundPort, env: process.env.NODE_ENV || 'development' }, 'Servidor iniciado');
     } catch (listenErr) {
-      console.error('❌ No se pudo iniciar el servidor:', listenErr?.message || listenErr);
+      logger.error({ err: listenErr }, 'No se pudo iniciar el servidor');
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error al iniciar el servidor:', error);
+    logger.error({ err: error }, 'Error al iniciar el servidor');
     process.exit(1);
   }
 };
 
 // Manejo de cierre graceful
 process.on('SIGTERM', () => {
-  console.log('🛑 Recibida señal SIGTERM, cerrando servidor...');
+  logger.warn('Recibida señal SIGTERM, cerrando servidor...');
   process.exit(0);
 });
 process.on('SIGINT', () => {
-  console.log('🛑 Recibida señal SIGINT, cerrando servidor...');
+  logger.warn('Recibida señal SIGINT, cerrando servidor...');
   process.exit(0);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error({ reason }, 'unhandledRejection');
+});
+process.on('uncaughtException', (err) => {
+  logUnhandledError(err);
+  process.exit(1);
 });
 
 // Iniciar servidor

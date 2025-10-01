@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { query, queryOne } from './database.js';
+import { logger } from './lib/logger.js';
 
 // Cache simple para introspección de esquema
 let hasClienteIdColumnCache = null;
@@ -19,15 +20,7 @@ const hasClienteIdColumn = async () => {
 export const authenticateToken = async (req, res, next) => {
   const token = req.cookies?.auth_token; // Leer de cookies en lugar de headers
   const debugAuth = process.env.DEBUG_AUTH === '1';
-  if (debugAuth) {
-    console.log('[DEBUG_AUTH] Incoming auth check', {
-      path: req.path,
-      hasCookie: !!token,
-      cookies: Object.keys(req.cookies || {}),
-      origin: req.get?.('origin'),
-      host: req.hostname
-    });
-  }
+  if (debugAuth) logger.debug({ tag: 'auth', phase: 'incoming', path: req.path, hasCookie: !!token, cookieKeys: Object.keys(req.cookies||{}), origin: req.get?.('origin'), host: req.hostname });
 
   if (!token) {
     return res.status(401).json({ 
@@ -39,9 +32,7 @@ export const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (debugAuth) {
-      console.log('[DEBUG_AUTH] Token decoded', { userId: decoded.userId, exp: decoded.exp });
-    }
+    if (debugAuth) logger.debug({ tag: 'auth', phase: 'decoded', userId: decoded.userId, exp: decoded.exp });
   const hasCliente = await hasClienteIdColumn();
   // Detectar columnas opcionales (activo, revendedor_id) de forma segura
   let hasActivo = true, hasRevendedor = true, hasTipo = true, hasRole = false;
@@ -67,9 +58,7 @@ export const authenticateToken = async (req, res, next) => {
 
   const selectSql = `SELECT id, username, email, ${roleExpr} AS tipo_usuario, ${hasActivo ? 'activo' : '1 AS activo'}, ${hasRevendedor ? 'revendedor_id' : 'NULL AS revendedor_id'}, ${hasCliente ? 'cliente_id' : 'NULL AS cliente_id'} FROM usuarios WHERE id = ? ${hasActivo ? 'AND activo = 1' : ''}`;
   const user = await queryOne(selectSql, [decoded.userId]);
-    if (debugAuth) {
-      console.log('[DEBUG_AUTH] Query user result', { found: !!user });
-    }
+    if (debugAuth) logger.debug({ tag: 'auth', phase: 'query-user', found: !!user });
 
     if (!user) {
       // Limpiar cookie si el usuario no existe o está inactivo
@@ -132,11 +121,11 @@ export const authenticateToken = async (req, res, next) => {
   cliente_id: user.cliente_id,
       tokenExp: decoded.exp
     };
-    if (debugAuth) console.log('[DEBUG_AUTH] Auth OK for', req.user.username, 'role', req.user.role);
+  if (debugAuth) logger.debug({ tag: 'auth', phase: 'success', user: req.user.username, role: req.user.role });
     
     next();
   } catch (error) {
-  if (debugAuth) console.log('[DEBUG_AUTH] Auth failure', { error: error.message, name: error.name });
+  if (debugAuth) logger.debug({ tag: 'auth', phase: 'failure', error: error.message, name: error.name });
   // Limpiar cookie en caso de token inválido o expirado
   res.clearCookie('auth_token', getCookieOptions(req, { omitMaxAge: true }));
     
