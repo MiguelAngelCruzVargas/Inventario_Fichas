@@ -35,6 +35,7 @@ import clientesPagosRoutes from './routes/clientes-pagos.js';
 import ventasOcasionalesRoutes from './routes/ventas-ocasionales.js';
 import catalogoRoutes from './routes/catalogo.js';
 import geoRoutes from './routes/geo.js';
+import archiveRoutes from './routes/archive.js';
 import bus from './events/bus.js';
 import { sseManager } from './lib/sse.js';
 
@@ -204,6 +205,12 @@ app.use('/api/clientes-pagos', clientesPagosRoutes);
 app.use('/api/ventas-ocasionales', ventasOcasionalesRoutes);
 app.use('/api/catalogo', catalogoRoutes);
 app.use('/api/geo', geoRoutes);
+if (process.env.ENABLE_DATA_EXPORT === '1') {
+  app.use('/api/admin/archive', archiveRoutes);
+  console.log('🛡️ Archive module ENABLED');
+} else {
+  console.log('🛡️ Archive module disabled');
+}
 
 // SSE stream for realtime updates (tareas, notas, entregas...)
 app.get('/api/stream', authenticateToken, (req, res) => {
