@@ -36,6 +36,7 @@ import ventasOcasionalesRoutes from './routes/ventas-ocasionales.js';
 import catalogoRoutes from './routes/catalogo.js';
 import geoRoutes from './routes/geo.js';
 import bus from './events/bus.js';
+import { sseManager } from './lib/sse.js';
 
 
 // Configurar variables de entorno
@@ -206,36 +207,54 @@ app.use('/api/geo', geoRoutes);
 
 // SSE stream for realtime updates (tareas, notas, entregas...)
 app.get('/api/stream', authenticateToken, (req, res) => {
-  // Only workers, admins (and optionally revendedores) listen
   const role = (req.user?.role || req.user?.tipo_usuario || '').toLowerCase();
-  if (!['trabajador','admin'].includes(role)) {
-    // allow but filter by user id in events
-  }
+  const userId = req.user?.id;
+
+  // Parámetro ?types=tarea-creada,tarea-actualizada
+  const typesParam = (req.query.types || '').toString().trim();
+  const filters = typesParam
+    ? new Set(typesParam.split(',').map(s => s.trim()).filter(Boolean))
+    : new Set();
 
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  // Permitir reconexión más rápida del EventSource estándar
+  res.setHeader('X-Accel-Buffering', 'no'); // Nginx: desactiva buffering
   res.flushHeaders?.();
-  // Send an initial ping so upstream proxies don't think the response is empty
-  try { res.write(': connected\n\n'); } catch {}
 
-  const heartbeat = setInterval(() => {
-    res.write(': keep-alive\n\n');
-  }, 15000);
+  // Registrar conexión
+  const connId = sseManager.addConnection({ res, userId, role, filters });
 
-  const handler = (evt) => {
-    // evt: { type, payload, targets?: { workerId?, userId? } }
-    try {
-      // Optional filtering can be added here
-      res.write(`event: ${evt.type}\n`);
-      res.write(`data: ${JSON.stringify(evt.payload)}\n\n`);
-    } catch {}
+  // Evento inicial "ready"
+  const readyPayload = {
+    userId,
+    role,
+    filters: [...filters],
+    capabilities: sseManager.capabilities,
+    serverTime: Date.now()
   };
-  bus.on('broadcast', handler);
+  try {
+    res.write('id: 0\n');
+    res.write('event: ready\n');
+    res.write(`data: ${JSON.stringify(readyPayload)}\n\n`);
+  } catch {}
+
+  // Heartbeat + ping (separados: comentario + evento ping)
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': keep-alive\n\n');
+      res.write('event: ping\n');
+      res.write(`data: {"ts":${Date.now()}}\n\n`);
+    } catch (e) {
+      clearInterval(heartbeat);
+      sseManager.removeConnection(connId);
+    }
+  }, 15000);
 
   req.on('close', () => {
     clearInterval(heartbeat);
-    bus.off('broadcast', handler);
+    sseManager.removeConnection(connId);
   });
 });
 
