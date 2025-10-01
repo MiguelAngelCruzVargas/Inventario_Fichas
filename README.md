@@ -19,7 +19,7 @@ Sistema completo de gestión de fichas WiFi (clientes, revendedores, trabajadore
 13. [Seguridad](#-cambios-de-seguridad-recientes)
 14. [Despliegue](#-despliegue-en-servicios)
 15. [Solución de Problemas](#-troubleshooting)
-16. [Próximas Mejores (Roadmap)](#-roadmap)
+
 
 ---
 ## ⚡ Resumen Rápido
@@ -424,4 +424,5 @@ TASK_IMAGES_MAX=3               # Número máximo de imágenes por actualizació
 - Validación estricta de mimetypes permitidos (rechaza otros tipos).
 - Límite de tamaño por archivo configurable vía env.
 - Límite de número de imágenes por tarea / nota.
+
 - Validación de contraseña fuerte (>=10 chars, mayúscula, minúscula, número, símbolo, sin espacios).
