@@ -7,8 +7,10 @@ const level = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 
 
 export const logger = pino({
   level,
+  // Redactamos cabeceras sensibles sólo del request. El header Set-Cookie no está presente
+  // en el objeto serializado actual y causaba error en fast-redact.
   redact: {
-    paths: ['req.headers.authorization','req.headers.cookie','res.headers.set-cookie'],
+    paths: ['req.headers.authorization','req.headers.cookie'],
     censor: '[REDACTED]'
   },
   timestamp: pino.stdTimeFunctions.isoTime
