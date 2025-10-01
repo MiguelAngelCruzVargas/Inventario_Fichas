@@ -4,8 +4,21 @@ import bcrypt from 'bcryptjs';
 import { db } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
 import { query } from '../database.js';
+import { logger } from '../lib/logger.js';
 
 const router = express.Router();
+
+// Helper validación de contraseña fuerte
+function validateStrongPassword(pwd) {
+  if (typeof pwd !== 'string') return 'Contraseña inválida';
+  if (pwd.length < 10) return 'La contraseña debe tener al menos 10 caracteres';
+  if (!/[A-Z]/.test(pwd)) return 'La contraseña debe contener al menos una letra mayúscula';
+  if (!/[a-z]/.test(pwd)) return 'La contraseña debe contener al menos una letra minúscula';
+  if (!/[0-9]/.test(pwd)) return 'La contraseña debe contener al menos un número';
+  if (!/[!@#$%^&*(),.?":{}|<>_+\-=/\[\];'`~]/.test(pwd)) return 'La contraseña debe contener al menos un símbolo';
+  if (/\s/.test(pwd)) return 'La contraseña no puede contener espacios';
+  return null;
+}
 
 // Obtener todos los usuarios (solo admin)
 router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -118,6 +131,10 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
     // Validaciones básicas
     if (!username || !password || !role) {
       return res.status(400).json({ message: 'Faltan campos obligatorios: username, password, role' });
+    }
+    const pwdErr = validateStrongPassword(password);
+    if (pwdErr) {
+      return res.status(400).json({ message: 'Contraseña insegura', detail: pwdErr });
     }
 
     // Validar roles permitidos
@@ -375,8 +392,12 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
     }
 
     if (password && password.trim() !== '') {
+      const pwdErr = validateStrongPassword(password.trim());
+      if (pwdErr) {
+        return res.status(400).json({ message: 'Contraseña insegura', detail: pwdErr });
+      }
       const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      const hashedPassword = await bcrypt.hash(password.trim(), saltRounds);
       updateFields.push('password_hash = ?');
       updateValues.push(hashedPassword);
     }
@@ -989,10 +1010,9 @@ router.post('/cambiar-password', authenticateToken, async (req, res) => {
       });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        message: 'La nueva contraseña debe tener al menos 6 caracteres' 
-      });
+    const pwdErr = validateStrongPassword(newPassword);
+    if (pwdErr) {
+      return res.status(400).json({ message: 'Contraseña insegura', detail: pwdErr });
     }
 
     if (currentPassword === newPassword) {

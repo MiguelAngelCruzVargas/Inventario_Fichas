@@ -424,3 +424,4 @@ TASK_IMAGES_MAX=3               # Número máximo de imágenes por actualizació
 - Validación estricta de mimetypes permitidos (rechaza otros tipos).
 - Límite de tamaño por archivo configurable vía env.
 - Límite de número de imágenes por tarea / nota.
+- Validación de contraseña fuerte (>=10 chars, mayúscula, minúscula, número, símbolo, sin espacios).
