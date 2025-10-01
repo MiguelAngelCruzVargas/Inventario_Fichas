@@ -1,5 +1,7 @@
 // VistaRevendedor.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { tareasService } from '../../services/tareasService';
 import { 
   Package, 
   DollarSign, 
@@ -9,7 +11,6 @@ import {
   Building2, 
   User, 
   Phone, 
-  MapPin,
   AlertTriangle,
   CheckCircle,
   Clock,
@@ -25,17 +26,47 @@ const VistaRevendedor = ({
   loading, // nuevo: estado de carga del contexto
   onLogout
 }) => {
-  // Estado local para controlar periodo de gracia y tiempo de montaje
+  // Estado UI
+  const [activeTab, setActiveTab] = useState('resumen');
+  const location = useLocation?.() || { search: '' };
+  const navigate = useNavigate?.();
+  const [expandedCortes, setExpandedCortes] = useState({}); // { [corteId]: boolean }
   const [graceExpired, setGraceExpired] = useState(false);
-  const [mountTime] = useState(() => Date.now());
+  const mountTimeRef = useRef(Date.now());
 
   useEffect(() => {
-    // Periodo de gracia corto para evitar parpadeo (ej. render inicial + layout)
     const graceTimer = setTimeout(() => setGraceExpired(true), 1200); // 1.2s
     return () => clearTimeout(graceTimer);
   }, []);
+  // Restaurar pestaña activa desde URL (?tab) o localStorage al montar/cambiar URL
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(location.search || '');
+      const tabFromQuery = params.get('tab');
+      const allowed = ['resumen','inventario','tareas','cortes'];
+      if (tabFromQuery && allowed.includes(tabFromQuery)) {
+        setActiveTab(tabFromQuery);
+        localStorage.setItem('revendedor.activeTab', tabFromQuery);
+      } else {
+        const stored = localStorage.getItem('revendedor.activeTab');
+        if (stored && allowed.includes(stored)) setActiveTab(stored);
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
-  const initialPendingWindow = Date.now() - mountTime < 4000; // El contexto espera 3s antes de cargar
+  // Persistir cambios de pestaña
+  useEffect(() => {
+    try { localStorage.setItem('revendedor.activeTab', activeTab); } catch {}
+  }, [activeTab]);
+
+  const initialPendingWindow = Date.now() - mountTimeRef.current < 4000; // El contexto espera 3s antes de cargar
+
+  // Toggle detalle de un corte
+  const toggleCorteDetalle = (corteId) => {
+    if (corteId == null) return;
+    setExpandedCortes(prev => ({ ...prev, [corteId]: !prev[corteId] }));
+  };
 
   // Añadir verificaciones de seguridad para evitar errores
   // Buscar por revendedor_id, no por user id
@@ -106,6 +137,49 @@ const VistaRevendedor = ({
   
   const tareasPendientes = misTareas.filter(t => t.estado === 'Pendiente' || t.estado === 'pendiente');
   const tareasCompletadas = misTareas.filter(t => t.estado === 'Completado' || t.estado === 'completada' || t.estado === 'Completada');
+
+  // Refetch pro-activo al entrar a la pestaña de tareas si está vacía (cubre caso sin SSE previo)
+  useEffect(() => {
+    let abort = false;
+    const intentarRefetch = async () => {
+      if (activeTab === 'tareas' && misDatos?.id) {
+        // Si no hay tareas cargadas aún, intentar obtenerlas del backend
+        if (misTareas.length === 0) {
+          try {
+            const resp = await tareasService.obtenerMisTareasRevendedor();
+            if (!abort && resp.success && resp.tareas?.length) {
+              console.log('🛰️ Refetch tareas al abrir pestaña (catch-up):', resp.tareas.length);
+              // No tenemos setter directo aquí; confiamos en SSE / context? -> fallback: disparar evento global
+              window.dispatchEvent(new CustomEvent('revendedor-tareas-refetch', { detail: resp.tareas }));
+            }
+          } catch (e) {
+            console.warn('⚠️ Error refetch tareas pestaña revendedor:', e);
+          }
+        }
+      }
+    };
+    intentarRefetch();
+    return () => { abort = true; };
+  }, [activeTab, misTareas.length, misDatos?.id]);
+
+  // Listener para inyectar tareas recibidas del refetch directo (sin duplicar lógica en contexto)
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const nuevas = e.detail || [];
+        if (Array.isArray(nuevas) && nuevas.length) {
+          // Merge superficial evitando duplicados por id
+          const mapa = new Map();
+            [...todasLasTareas, ...nuevas].forEach(t => mapa.set(t.id, t));
+          // No tenemos setTareasMantenimiento aquí; idealmente deberíamos levantar un callback vía props
+          // Como fallback temporal: almacenar en window para que contexto pueda optar por leer (si se implementa)
+          window.__ultimaListaTareasRevendedor = Array.from(mapa.values());
+        }
+      } catch {}
+    };
+    window.addEventListener('revendedor-tareas-refetch', handler);
+    return () => window.removeEventListener('revendedor-tareas-refetch', handler);
+  }, [todasLasTareas]);
 
   // Si no hay datos del usuario actual, mostrar loading o error
   if (!currentUser) {
@@ -190,17 +264,17 @@ const VistaRevendedor = ({
     <div className="min-h-screen bg-gray-50">
       {/* Header - Optimizado para móvil */}
       <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-3 sm:px-4 lg:px-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 gap-4">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-100 rounded-xl flex items-center justify-center flex-shrink-0">
                 <Building2 className="w-5 h-5 sm:w-6 sm:h-6 text-slate-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="text-lg sm:text-2xl font-semibold text-gray-900 truncate">
+                <h1 className="text-base sm:text-2xl font-semibold text-gray-900 truncate">
                   {misDatos?.nombre_negocio || misDatos?.nombre || 'Negocio'}
                 </h1>
-                <p className="text-sm sm:text-base text-gray-600 truncate">
+                <p className="text-xs sm:text-base text-gray-600 truncate">
                   {currentUser?.nombre_completo || currentUser?.username}
                 </p>
               </div>
@@ -214,58 +288,89 @@ const VistaRevendedor = ({
               <span className="sm:hidden">Salir</span>
             </button>
           </div>
+          {/* Tabs (Desktop/Tablet) */}
+          <div className="hidden sm:flex flex-wrap gap-2 pb-4">
+            {[
+              { key: 'resumen', label: 'Resumen' },
+              { key: 'inventario', label: 'Inventario' },
+              { key: 'tareas', label: 'Tareas' },
+              { key: 'cortes', label: 'Cortes de Caja' }
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  try {
+                    const params = new URLSearchParams(location.search || '');
+                    params.set('tab', tab.key);
+                    navigate && navigate({ search: params.toString() }, { replace: false });
+                  } catch {}
+                }}
+                className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${activeTab === tab.key ? 'border-blue-600 text-blue-700 bg-blue-50' : 'border-gray-200 text-gray-700 hover:text-gray-900 hover:bg-gray-50'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 sm:space-y-8">
+  <div className="w-full px-3 sm:px-4 lg:px-6 py-3 sm:py-8 space-y-4 sm:space-y-8 pb-[4.5rem] sm:pb-8" style={{ paddingBottom: 'max(4.5rem, env(safe-area-inset-bottom))' }}>
         
-        {/* Información Personal - Optimizada para móvil */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
+  {/* Información Personal (Resumen) */}
+  {activeTab === 'resumen' && (
+  <div id="section-info" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6 lg:p-8">
           <div className="flex items-center space-x-3 mb-4 sm:mb-6">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-50 rounded-xl flex items-center justify-center">
               <User className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Mi Información</h2>
-              <p className="text-gray-500 text-xs sm:text-sm">Datos de contacto y ubicación</p>
+              <p className="text-gray-500 text-xs sm:text-sm">Datos de contacto</p>
             </div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {/* Nombre (siempre primero) */}
             <div className="flex items-center space-x-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
-              <Building2 className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
+              <User className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm text-gray-500">Negocio</p>
+                <p className="text-xs sm:text-sm text-gray-500">Nombre</p>
                 <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-                  {misDatos?.nombre_negocio || misDatos?.nombre}
+                  {currentUser?.nombre_completo || misDatos?.responsable || misDatos?.nombre || currentUser?.username}
                 </p>
               </div>
             </div>
-            
-            <div className="flex items-center space-x-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
-              <Phone className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm text-gray-500">Teléfono</p>
-                <p className="font-semibold text-gray-900 text-sm sm:text-base">{misDatos?.telefono}</p>
-              </div>
-            </div>
-            
-            {misDatos?.direccion && (
-              <div className="flex items-center space-x-3 p-3 sm:p-4 bg-gray-50 rounded-xl sm:col-span-2 lg:col-span-1">
-                <MapPin className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
+
+            {/* Negocio (si tiene) */}
+            {misDatos?.nombre_negocio && (
+              <div className="flex items-center space-x-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
+                <Building2 className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs sm:text-sm text-gray-500">Dirección</p>
-                  <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-                    {misDatos.direccion}
-                  </p>
+                  <p className="text-xs sm:text-sm text-gray-500">Negocio</p>
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">{misDatos.nombre_negocio}</p>
                 </div>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Inventario Actual - Optimizado para móvil */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
+            {/* Teléfono (si tiene) */}
+            {misDatos?.telefono && (
+              <div className="flex items-center space-x-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
+                <Phone className="w-6 h-6 sm:w-8 sm:h-8 text-gray-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm text-gray-500">Teléfono</p>
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base">{misDatos.telefono}</p>
+                </div>
+              </div>
+            )}
+
+          </div>
+    </div>
+    )}
+
+    {/* Inventario Actual */}
+  {activeTab === 'inventario' && (
+  <div id="section-inventario" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6 lg:p-8">
           <div className="flex items-center space-x-3 mb-4 sm:mb-6">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-50 rounded-xl flex items-center justify-center">
               <Package className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
@@ -279,7 +384,7 @@ const VistaRevendedor = ({
           {misInventarios && misInventarios.length > 0 ? (
             <div className="space-y-4 sm:space-y-6">
               {/* Resumen de inventario - Cards responsivas */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-6">
                 <div className="bg-emerald-50 p-3 sm:p-4 rounded-xl text-center">
                   <h4 className="font-semibold text-emerald-800 text-sm sm:text-base">Tipos de Fichas</h4>
                   <p className="text-xl sm:text-2xl font-bold text-emerald-600">{misInventarios.length}</p>
@@ -301,8 +406,10 @@ const VistaRevendedor = ({
               {/* Lista de inventarios - Formato responsivo */}
               <div className="space-y-3 sm:hidden">
                 {/* Vista móvil: Cards apiladas */}
-                {misInventarios.map((inventario, index) => (
-                  <div key={index} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                {misInventarios.map((inventario, index) => {
+                  const invKey = `${inventario.id || inventario.tipo_ficha_id || inventario.tipo_ficha_nombre || 'inv'}-${inventario.tipo_ficha_nombre || index}`;
+                  return (
+                  <div key={invKey} className="border border-gray-200 rounded-xl p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
@@ -332,7 +439,7 @@ const VistaRevendedor = ({
                         }
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-gray-500">Disponibles:</span>
                         <p className="font-semibold text-gray-900">{inventario.stock_actual || 0}</p>
@@ -343,7 +450,8 @@ const VistaRevendedor = ({
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Vista desktop: Tabla tradicional */}
@@ -359,8 +467,10 @@ const VistaRevendedor = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {misInventarios.map((inventario, index) => (
-                      <tr key={index} className="hover:bg-gray-50 transition-colors">
+                    {misInventarios.map((inventario, index) => {
+                      const invKey = `${inventario.id || inventario.tipo_ficha_id || inventario.tipo_ficha_nombre || 'inv'}-${inventario.tipo_ficha_nombre || index}`;
+                      return (
+                      <tr key={invKey} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 sm:px-6 py-4">
                           <div className="flex items-center">
                             <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center mr-3">
@@ -403,7 +513,8 @@ const VistaRevendedor = ({
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -418,10 +529,12 @@ const VistaRevendedor = ({
               </p>
             </div>
           )}
-        </div>
+    </div>
+  )}
 
-        {/* Mis Tareas de Mantenimiento - Optimizada para móvil */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
+    {/* Mis Tareas de Mantenimiento */}
+  {activeTab === 'tareas' && (
+  <div id="section-tareas" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6 lg:p-8">
           <div className="flex items-center space-x-3 mb-4 sm:mb-6">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-50 rounded-xl flex items-center justify-center">
               <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
@@ -433,7 +546,7 @@ const VistaRevendedor = ({
           </div>
 
           {/* Resumen de Tareas - Cards responsivas */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-6">
             <div className="bg-slate-50 p-3 sm:p-4 rounded-xl text-center">
               <h4 className="font-semibold text-slate-800 text-sm sm:text-base">Total de Tareas</h4>
               <p className="text-xl sm:text-2xl font-bold text-slate-600">{misTareas.length}</p>
@@ -464,7 +577,7 @@ const VistaRevendedor = ({
                   return (prioridades[b.prioridad] || 0) - (prioridades[a.prioridad] || 0);
                 })
                 .map(tarea => (
-                  <div key={tarea.id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-sm transition-shadow">
+                  <div key={tarea.id} className="border border-gray-200 rounded-xl p-3 sm:p-6 hover:shadow-sm transition-shadow">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-3 sm:mb-4 gap-3">
                       <div className="flex-1">
                         <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">{tarea.titulo}</h3>
@@ -535,11 +648,13 @@ const VistaRevendedor = ({
               </div>
             )}
           </div>
-        </div>
+    </div>
+  )}
 
-        {/* Mis Cortes de Caja - Optimizada para móvil */}
-        {misCortesHistorial.length > 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
+    {/* Mis Cortes de Caja */}
+    {activeTab === 'cortes' && (
+      misCortesHistorial.length > 0 ? (
+      <div id="section-cortes" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
             <div className="flex items-center space-x-3 mb-4 sm:mb-6">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-50 rounded-xl flex items-center justify-center">
                 <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
@@ -557,7 +672,7 @@ const VistaRevendedor = ({
                   Resumen Total - Todos mis Cortes
                 </h3>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
                   <div className="bg-white p-3 sm:p-4 rounded-xl text-center shadow-sm">
                     <h4 className="font-semibold text-emerald-800 mb-2 text-sm sm:text-base">Mi Ganancia Total</h4>
                     <p className="text-lg sm:text-2xl font-bold text-emerald-600">
@@ -587,57 +702,189 @@ const VistaRevendedor = ({
               </div>
             )}
 
-            {/* Mostrar todos los cortes si hay más de uno */}
-            {misCortesHistorial.length > 1 && (
+            {/* Mostrar todos los cortes */}
+            {misCortesHistorial.length > 0 && (
               <div>
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Historial Completo</h3>
-                <div className="space-y-3 sm:space-y-4 max-h-80 sm:max-h-96 overflow-y-auto">
-                  {misCortesHistorial.map((corte, index) => (
-                    <div key={corte.id} className="p-3 sm:p-4 border border-gray-200 rounded-xl hover:shadow-sm transition-shadow">
+                <div className="space-y-3 sm:space-y-4">
+                  {misCortesHistorial.map((corte, index) => {
+                    // Normalizar porcentajes: si backend envió porcentaje_revendedor=0 pero porcentaje_admin > 0, recalcular.
+                    let pctAdmin = Number(corte.porcentaje_admin);
+                    let pctRev = Number(corte.porcentaje_revendedor);
+                    if (!Number.isFinite(pctAdmin) || pctAdmin < 0) pctAdmin = porcentajeAdmin;
+                    if (!Number.isFinite(pctRev) || pctRev <= 0) {
+                      if (Number.isFinite(pctAdmin) && pctAdmin > 0 && pctAdmin < 100) {
+                        pctRev = 100 - pctAdmin;
+                      } else {
+                        pctRev = porcentajeRevendedor; // fallback global
+                      }
+                    }
+                    const tiposConVentas = Array.isArray(corte.tipos_vendidos)
+                      ? corte.tipos_vendidos.filter(t => (t?.vendidas || 0) > 0 || (t?.total_vendido || 0) > 0)
+                      : [];
+                    return (
+                    <div key={`${corte?.id ?? 'idx'}-${index}`} className="p-3 sm:p-5 border border-gray-200 rounded-2xl shadow-sm hover:shadow transition-shadow bg-white">
                       <div className="flex flex-col sm:flex-row justify-between items-start mb-3 gap-2">
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-900 text-sm sm:text-base">
-                            Corte #{corte.id} - {new Date(corte.fecha).toLocaleDateString('es-MX')}
+                            {(() => {
+                              const base = corte.fecha || corte.fecha_corte || corte.created_at;
+                              const created = corte.created_at || base;
+                              try {
+                                const dBase = new Date(base);
+                                const dCreated = new Date(created);
+                                if (!isNaN(dBase) && !isNaN(dCreated)) {
+                                  const fechaStr = dBase.toLocaleDateString('es-MX', { dateStyle: 'medium' });
+                                  const horaStr = dCreated.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                                  return `Corte del ${fechaStr} • ${horaStr}`;
+                                }
+                              } catch {}
+                              return `Corte del ${new Date(base).toLocaleDateString('es-MX')}`;
+                            })()}
                           </h4>
                           <p className="text-xs sm:text-sm text-gray-600">
-                            {corte.tipos_vendidos?.length || 0} tipos de fichas vendidas
+                            {tiposConVentas.length} tipos de fichas vendidas
                           </p>
                         </div>
                         <div className="text-left sm:text-right">
                           <p className="font-semibold text-emerald-600 text-sm sm:text-base">
                             ${corte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
                           </p>
-                          <p className="text-xs sm:text-sm text-gray-500">Mi ganancia ({corte.porcentaje_revendedor || porcentajeRevendedor}%)</p>
+                          <p className="text-xs sm:text-sm text-gray-500">Mi ganancia ({pctRev}%)</p>
+                          {/* Estado del cobro */}
+                          {(() => {
+                            const estado = (corte.estado_cobro || '').toLowerCase();
+                            const cls = estado === 'saldado'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : estado === 'parcial'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-gray-100 text-gray-800';
+                            const label = estado ? estado.toUpperCase() : 'PENDIENTE';
+                            return (
+                              <span className={`inline-flex mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${cls}`}>
+                                {label}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-xs sm:text-sm">
-                        <div>
-                          <span className="text-gray-600">Total vendido:</span>
-                          <p className="font-medium">${corte.total_vendido?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">Mi ganancia ({corte.porcentaje_revendedor || porcentajeRevendedor}%):</span>
-                          <p className="font-medium text-emerald-600">${corte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">Para admin ({corte.porcentaje_admin || porcentajeAdmin}%):</span>
-                          <p className="font-medium text-purple-600">${corte.total_ganancia_admin?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</p>
-                        </div>
+                      {/* Resumen compacto en tabla */}
+                      <div className="mt-2 sm:mt-3 overflow-hidden rounded-lg border border-gray-200">
+                        <table className="w-full text-xs sm:text-sm">
+                          <tbody>
+                            <tr className="odd:bg-white even:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">Total vendido</td>
+                              <td className="px-3 py-2 text-right font-semibold text-blue-600">${corte.total_vendido?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</td>
+                            </tr>
+                            <tr className="odd:bg-white even:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">Mi ganancia ({pctRev}%)</td>
+                              <td className="px-3 py-2 text-right font-semibold text-emerald-600">${corte.total_comision_revendedor?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</td>
+                            </tr>
+                            <tr className="odd:bg-white even:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">Para admin ({pctAdmin}%)</td>
+                              <td className="px-3 py-2 text-right font-semibold text-purple-600">${corte.total_ganancia_admin?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}</td>
+                            </tr>
+                            {/* Abonos y saldo (si existen datos) */}
+                            <tr className="odd:bg-white even:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">Abonado por revendedor</td>
+                              <td className="px-3 py-2 text-right font-semibold text-gray-900">${(corte.monto_pagado_revendedor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                            <tr className="odd:bg-white even:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">Saldo pendiente</td>
+                              <td className="px-3 py-2 text-right font-semibold ${(corte.saldo_revendedor || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}">${(corte.saldo_revendedor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
+
+                      {/* Detalle por tipo (toggle) */}
+                      {tiposConVentas.length > 0 && (
+                        <div className="mt-3 sm:mt-4 pt-3 border-t border-gray-100">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-xs sm:text-sm text-gray-600">Detalle por tipo</div>
+                            <button
+                              onClick={() => toggleCorteDetalle(corte.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs sm:text-sm font-medium"
+                            >
+                              {expandedCortes[corte.id] ? 'Ocultar detalle' : 'Ver detalle'}
+                            </button>
+                          </div>
+                          {expandedCortes[corte.id] && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs sm:text-sm">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-700">Tipo</th>
+                                    <th className="px-3 py-2 text-center font-medium text-gray-700">Vendidas</th>
+                                    <th className="px-3 py-2 text-center font-medium text-gray-700">Vendido</th>
+                                    <th className="px-3 py-2 text-center font-medium text-gray-700">Mi ganancia ({pctRev}%)</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-700">Para admin ({pctAdmin}%)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {tiposConVentas.map((t, i) => {
+                                    const rowKey = `${corte.id || 'c'}-tbl-${t.tipo_ficha || t.tipo || i}`;
+                                    return (
+                                      <tr key={rowKey} className="odd:bg-white even:bg-gray-50">
+                                        <td className="px-3 py-2 text-gray-900">{t.tipo_ficha}</td>
+                                        <td className="px-3 py-2 text-center">{t.vendidas || 0}</td>
+                                        <td className="px-3 py-2 text-center text-blue-600">${(t.total_vendido || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                        <td className="px-3 py-2 text-center text-emerald-600">${(t.comision_revendedor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                        <td className="px-3 py-2 text-right text-purple-600">${(t.ganancia_admin || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             )}
           </div>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 text-center">
+          ) : (
+          <div id="section-cortes" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 text-center">
             <Calendar className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mb-4" />
             <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No hay cortes de caja disponibles</h3>
             <p className="text-gray-500 text-sm sm:text-base px-4">El administrador aún no ha realizado ningún corte de caja para tu negocio.</p>
           </div>
+          )
         )}
+      </div>
+
+      {/* Navegación móvil fija */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="grid grid-cols-4 h-14" style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom))' }}>
+          {[
+            { key: 'resumen', label: 'Inicio', icon: User },
+            { key: 'inventario', label: 'Inventario', icon: Package },
+            { key: 'tareas', label: 'Tareas', icon: AlertTriangle },
+            { key: 'cortes', label: 'Cortes', icon: DollarSign }
+          ].map(item => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.key}
+                onClick={() => {
+                  setActiveTab(item.key);
+                  try {
+                    const params = new URLSearchParams(location.search || '');
+                    params.set('tab', item.key);
+                    navigate && navigate({ search: params.toString() }, { replace: false });
+                  } catch {}
+                }}
+                className={`flex flex-col items-center justify-center space-y-1 ${activeTab === item.key ? 'text-blue-700' : 'text-gray-700'}`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[11px] font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

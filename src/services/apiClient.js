@@ -1,17 +1,26 @@
 import axios from 'axios';
-import { handleApiError, isExpectedError } from '../utils/errorHandler';
-import { cacheManager, cachedRequest } from '../utils/cacheManager';
+import { handleApiError, isExpectedError } from '@utils/errorHandler';
+import { cacheManager, cachedRequest } from '@utils/cacheManager';
 
 // --- CAMBIO CLAVE ---
 // Con proxy configurado en Vite - el frontend usa rutas relativas
 // Vite redirige automáticamente /api/* a http://localhost:3000/api/*
 const API_BASE_URL = '/api';
 
+// Detectar si estamos en un dominio de túnel (más latencia) para ampliar timeout
+let baseTimeout = 30000;
+try {
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (/\.loca\.lt$|ngrok\.(io|app)$/i.test(host)) {
+    baseTimeout = 45000; // 45s para túneles
+  }
+} catch {}
+
 // Crear instancia de axios
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 segundos
-  withCredentials: true, // Importante: envía cookies automáticamente
+  timeout: baseTimeout,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -37,7 +46,15 @@ const shouldThrottleRequest = (endpoint) => {
   }
   
   // Ser más permisivo con endpoints críticos para actualizaciones en tiempo real
-  const criticalEndpoints = ['/usuarios', '/tareas/trabajadores/disponibles', '/tareas'];
+  const criticalEndpoints = [
+    '/usuarios',
+    '/tareas/trabajadores/disponibles',
+    '/tareas',
+    // Cortes de caja: evitar cancelaciones y permitir lecturas frecuentes
+    '/cortes-caja/historial',
+    '/cortes-caja/estadisticas',
+    '/cortes-caja/mis-cortes'
+  ];
   const isCritical = criticalEndpoints.some(critical => endpoint?.includes(critical));
   
   if (isCritical) {
@@ -57,7 +74,7 @@ const shouldThrottleRequest = (endpoint) => {
       requestThrottle.set(endpoint, now);
     } else {
       // En lugar de throttling duro, agregar delay pequeño y permitir
-  if (import.meta.env.DEV) console.log(`⏳ Retrasando petición a ${endpoint} por ${300 - timeDiff}ms`);
+  if (globalThis.__APP_DEBUG__) console.log(`⏳ Retrasando petición a ${endpoint} por ${300 - timeDiff}ms`);
       return false; // No throttlear, solo logear
     }
     
@@ -90,34 +107,54 @@ const shouldThrottleRequest = (endpoint) => {
   return false;
 };
 
-// Interceptor para responses - manejo de errores globales
+// Helper: determinar si se puede reintentar
+const isIdempotent = (method) => ['get','head','options'].includes(String(method).toLowerCase());
+const shouldRetry = (error) => {
+  if (!error || !error.config) return false;
+  const code = error.code;
+  if (code === 'ECONNABORTED') return true; // timeout
+  if (code === 'ERR_NETWORK') return true;  // pérdida momentánea
+  // Algunos navegadores no ponen code, pero sí message
+  if (!code && /timeout/i.test(error.message)) return true;
+  return false;
+};
+
+// Interceptor responses con retry/backoff para timeouts en GET
 apiClient.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
+  (response) => response,
+  async (error) => {
+    const cfg = error.config || {};
     const status = error.response?.status;
-    const url = error.config?.url;
+    const url = cfg.url || '';
     const errorData = error.response?.data;
-    
-    // Solo hacer log de errores inesperados (500+), no de errores de negocio (400-499)
-    // Silenciar errores 401 de /auth/me (verificación de sesión inicial)
-    if (status >= 500 || (!status && error.code !== 'ERR_NETWORK')) {
+
+    // Retry: solo para métodos idempotentes y condiciones de red/timeout
+    if (shouldRetry(error) && isIdempotent(cfg.method) && !cfg.__retryDisabled) {
+      cfg.__retryCount = (cfg.__retryCount || 0) + 1;
+      const maxRetries = 2; // total de reintentos
+      if (cfg.__retryCount <= maxRetries) {
+        const backoff = 400 * Math.pow(cfg.__retryCount, 2); // 400ms, 1600ms
+        if (globalThis.__APP_DEBUG__) console.warn(`⏳ Retry ${cfg.__retryCount}/${maxRetries} tras ${backoff}ms → ${url}`);
+        await new Promise(r => setTimeout(r, backoff));
+        return apiClient(cfg); // reintentar
+      }
+    }
+
+    // Silenciar errores esperados de autenticación para mantener consola limpia
+    const isAuthEndpoint = url.startsWith('/auth/');
+    const isAuthExpected = isAuthEndpoint && (status === 401 || status === 404);
+
+    if (!isAuthExpected && (status >= 500 || (!status && error.code !== 'ERR_NETWORK'))) {
       handleApiError(error, 'API Client');
     }
 
-    // Si es 401 (no autorizado), manejar según el tipo de error
-    if (status === 401 && !url?.includes('/auth/login')) {
-      // No mostrar errores para verificaciones de sesión inicial
-      if (url?.includes('/auth/me')) {
-        // Silencioso - es normal que falle la primera vez
-        return Promise.reject(error);
+    // Manejo de 401
+    if (status === 401 && !url.includes('/auth/login')) {
+      if (url.includes('/auth/me')) {
+        return Promise.reject(error); // silencioso
       }
-      // Verificar si es una expiración de sesión
       if (errorData?.expired) {
         console.warn('🕒 Sesión expirada detectada por API');
-        
-        // Disparar evento personalizado para manejo de expiración
         window.dispatchEvent(new CustomEvent('sessionExpired', {
           detail: { 
             message: errorData.detail || 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
@@ -125,13 +162,8 @@ apiClient.interceptors.response.use(
           }
         }));
       }
-      
-      // Solo redirigir si no estamos ya en login y no es una llamada a /auth/me
       if (!window.location.pathname.includes('/login') && !url?.includes('/auth/me')) {
-        // Pequeño delay para permitir que los eventos se procesen
-        setTimeout(() => {
-          window.location.href = '/login';
-        }, 100);
+        setTimeout(() => { window.location.href = '/login'; }, 100);
       }
     }
 
@@ -147,11 +179,21 @@ apiClient.interceptors.request.use(
     // Verificar si esta petición debe ser throttled
     if (shouldThrottleRequest(endpoint)) {
       const lastRequest = requestThrottle.get(endpoint);
-      const timeDiff = Date.now() - lastRequest;
-      console.warn(`⚠️ Throttling request to ${endpoint} (too soon: ${timeDiff}ms < ${THROTTLE_TIME}ms)`);
-      
-      // Cancelar la petición
-      return Promise.reject(new axios.Cancel(`Request throttled: ${endpoint}`));
+      const timeDiff = Date.now() - (lastRequest || 0);
+      const waitMs = Math.max(THROTTLE_TIME - timeDiff, 60);
+      if (import.meta.env.DEV) {
+        console.warn(`⏳ Delay request to ${endpoint} by ${waitMs}ms (too soon: ${timeDiff}ms < ${THROTTLE_TIME}ms)`);
+      }
+      // En lugar de cancelar, retrasar la petición y continuar
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          // Marcar nuevo timestamp para este endpoint
+          requestThrottle.set(endpoint, Date.now());
+          const cnt = (requestCounts.get(endpoint) || 0) + 1;
+          requestCounts.set(endpoint, cnt);
+          resolve(config);
+        }, waitMs);
+      });
     }
     
     // Limpiar entradas antiguas cada 10 peticiones para evitar memory leaks

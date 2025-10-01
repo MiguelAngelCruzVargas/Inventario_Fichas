@@ -1,5 +1,5 @@
 // Dashboard.jsx - Versión Responsiva
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -14,10 +14,16 @@ import {
   Clock,
   Zap,
   Target,
-  Calendar
+  Calendar,
+  Wrench,
+  FileText,
+  CreditCard,
+  ShoppingCart,
+  Warehouse,
+  MessageSquare
 } from 'lucide-react';
-import { apiClient } from '../../services/apiClient';
-import { useUsers } from '../../context/UsersContext';
+import { apiClient } from '@services/apiClient';
+import { useUsers } from '@context/UsersContext';
 
 const Dashboard = () => {
   // Usar el contexto de usuarios para detectar cambios
@@ -35,6 +41,11 @@ const Dashboard = () => {
     loading: true,
     error: null
   });
+  // Novedades en vivo (SSE)
+  const [liveEvents, setLiveEvents] = useState([]); // {id, type, message, ts, raw}
+  const [unreadEvents, setUnreadEvents] = useState(0);
+  const [showEventsMenu, setShowEventsMenu] = useState(false);
+  const esRef = useRef(null);
 
   // Cargar datos del dashboard con throttling agresivo
   useEffect(() => {
@@ -89,6 +100,109 @@ const Dashboard = () => {
 
     return () => clearTimeout(timeoutId);
   }, [cachedDashboardData, updateDashboardData]);
+
+  // Conectar al stream SSE para novedades (tareas y notas)
+  useEffect(() => {
+    let retryTimeout;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const connectSSE = () => {
+      try {
+        // Evitar dobles conexiones en HMR
+        if (esRef.current) {
+          esRef.current.close?.();
+          esRef.current = null;
+        }
+        
+        const es = new EventSource('/api/stream');
+        esRef.current = es;
+
+        const pushEvent = (evtType, payload) => {
+          const ts = new Date();
+          // Construir mensaje legible
+          let message = '';
+          if (evtType === 'nota-creada') {
+            const autor = payload?.username || 'Trabajador';
+            const titulo = payload?.titulo || 'Nueva nota';
+            const destino = payload?.revendedor_nombre ? ` • ${payload.revendedor_nombre}` : '';
+            message = `${autor} publicó: "${titulo}"${destino}`;
+          } else if (evtType === 'nota-actualizada') {
+            message = `Nota actualizada (#${payload?.id || ''})`;
+          } else if (evtType === 'tarea-creada') {
+            const prio = payload?.prioridad ? ` · ${payload.prioridad}` : '';
+            message = `Nueva tarea: ${payload?.titulo || ''}${prio}`;
+          } else if (evtType === 'tarea-completada') {
+            message = `Tarea #${payload?.id || ''} completada`;
+          } else if (evtType === 'tarea-actualizada') {
+            message = `Tarea #${payload?.id || ''} marcada como ${payload?.estado || ''}`;
+          } else if (evtType === 'entrega-creada') {
+            const quien = payload?.usuario_entrega || 'Sistema';
+            const rev = payload?.revendedor_nombre || 'revendedor';
+            const cant = payload?.cantidad || 0;
+            const tipo = payload?.tipo_ficha_nombre || 'fichas';
+            message = `${quien} entregó ${cant} × ${tipo} a ${rev}`;
+          } else {
+            message = evtType.replace(/-/g,' ');
+          }
+          setLiveEvents(prev => {
+            const next = [{ id: `${evtType}-${Date.now()}`, type: evtType, message, ts, raw: payload }, ...prev];
+            return next.slice(0, 20);
+          });
+          setUnreadEvents(u => u + 1);
+        };
+
+        const makeHandler = (type) => (e) => {
+          try {
+            const data = e?.data ? JSON.parse(e.data) : null;
+            pushEvent(type, data);
+          } catch {
+            pushEvent(type, null);
+          }
+        };
+
+        ['nota-creada', 'nota-actualizada', 'nota-eliminada', 'tarea-creada', 'tarea-actualizada', 'tarea-completada', 'entrega-creada'].forEach(t => {
+          es.addEventListener(t, makeHandler(t));
+        });
+        
+        es.onopen = () => { 
+          retryCount = 0; // Reset counter on successful connection
+          if (import.meta.env.DEV) console.log('🔌 Conectado a /api/stream'); 
+        };
+        
+        es.onerror = () => { 
+          if (retryCount < maxRetries) {
+            retryCount++;
+            if (import.meta.env.DEV) console.warn(`⚠️ Error en SSE (intento ${retryCount}/${maxRetries})`);
+          } else {
+            if (import.meta.env.DEV) console.warn('⚠️ SSE deshabilitado tras múltiples errores');
+            es.close();
+            esRef.current = null;
+          }
+        };
+
+        return es;
+      } catch (error) {
+        if (import.meta.env.DEV) console.warn('⚠️ No se pudo conectar a SSE:', error.message);
+        return null;
+      }
+    };
+
+    const es = connectSSE();
+
+    return () => {
+      if (retryTimeout) clearTimeout(retryTimeout);
+      try { 
+        if (es) es.close(); 
+      } catch {}
+      esRef.current = null;
+    };
+  }, []);
+
+  // Acceso rápido: cambiar pestaña en AdminWrapper
+  const goToTab = (tabId) => {
+    window.dispatchEvent(new CustomEvent('changeAdminTab', { detail: { tabId } }));
+  };
 
   // Función para recargar datos manualmente
   const recargarDatos = async () => {
@@ -279,16 +393,54 @@ const Dashboard = () => {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-gray-500 text-sm">Resumen general del sistema</p>
           </div>
-          <button
-            onClick={recargarDatos}
-            disabled={dashboardData.loading}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
-          >
-            <Activity className={`w-4 h-4 ${dashboardData.loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">
-              {dashboardData.loading ? 'Cargando...' : 'Recargar Datos'}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={recargarDatos}
+              disabled={dashboardData.loading}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
+            >
+              <Activity className={`w-4 h-4 ${dashboardData.loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {dashboardData.loading ? 'Cargando...' : 'Recargar Datos'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Accesos rápidos */}
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center">
+                <Target className="w-4 h-4 text-slate-600" />
+              </div>
+              <h3 className="text-sm sm:text-base font-semibold text-gray-900">Accesos rápidos</h3>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+            {[{
+              id:'tareas', label:'Tareas', icon: Wrench, color:'bg-amber-50 text-amber-700'
+            },{
+              id:'notas', label:'Notas', icon: MessageSquare, color:'bg-indigo-50 text-indigo-700'
+            },{
+              id:'entregas', label:'Entregas', icon: Package, color:'bg-green-50 text-green-700'
+            },{
+              id:'clientes', label:'Clientes', icon: Users, color:'bg-slate-50 text-slate-700'
+            },{
+              id:'pagos-servicio', label:'Pagos', icon: CreditCard, color:'bg-teal-50 text-teal-700'
+            }].map(item => {
+              const Icon = item.icon;
+              return (
+                <button key={item.id} onClick={() => goToTab(item.id)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-left">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.color}`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         
         {/* Alertas y Notificaciones - Responsivas */}
@@ -419,7 +571,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Sección de Análisis - Grid Responsivo */}
+  {/* Sección de Análisis - Grid Responsivo */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           
           {/* Estado de Mantenimiento */}
@@ -502,7 +654,7 @@ const Dashboard = () => {
             
             <div className="space-y-3 sm:space-y-4">
               {inventarioPorTipo.map(item => (
-                <div key={item.tipo} className="space-y-2 sm:space-y-3">
+                <div key={`${item.tipo}-${item.totalEnInventario}-${item.totalEntregado}`} className="space-y-2 sm:space-y-3">
                   <div className="flex justify-between items-center">
                     <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
                       <div className="w-6 h-6 sm:w-8 sm:h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -529,8 +681,57 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Actividad Reciente - Grid Responsivo */}
+        {/* Actividad Reciente y Novedades - Grid Responsivo */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {/* Novedades en vivo */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+            <div className="flex items-center space-x-3 mb-4 sm:mb-6">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-rose-50 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Novedades del equipo</h3>
+                <p className="text-gray-500 text-xs sm:text-sm">Notas y cambios de tareas en tiempo real</p>
+              </div>
+              <div className="ml-auto">
+                <button onClick={() => { setUnreadEvents(0); }} className="text-xs sm:text-sm text-blue-600 hover:underline">Marcar como visto</button>
+              </div>
+            </div>
+            <div className="space-y-2 sm:space-y-3 max-h-64 sm:max-h-80 overflow-y-auto">
+              {liveEvents.length === 0 && (
+                <div className="text-center py-6 sm:py-8 text-gray-500">
+                  <Bell className="mx-auto h-6 w-6 sm:h-8 sm:w-8 text-gray-400 mb-2" />
+                  <p className="text-xs sm:text-sm">Sin novedades por ahora</p>
+                </div>
+              )}
+              {liveEvents.map((evt) => (
+                <div key={evt.id} className="flex items-start p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl">
+                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-white rounded-lg flex items-center justify-center mr-3 sm:mr-4 flex-shrink-0">
+                    {evt.type?.includes('nota') ? (
+                      <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-600" />
+                    ) : evt.type === 'entrega-creada' ? (
+                      <Package className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
+                    ) : (
+                      <Wrench className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm sm:text-base text-gray-900">{evt.message}</p>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(evt.ts).toLocaleString()}</p>
+                  </div>
+                  <div className="flex-shrink-0 ml-3">
+                    {evt.type?.includes('nota') ? (
+                      <button onClick={() => goToTab('notas')} className="text-xs sm:text-sm text-indigo-700 hover:underline">Ver notas</button>
+                    ) : evt.type === 'entrega-creada' ? (
+                      <button onClick={() => goToTab('entregas')} className="text-xs sm:text-sm text-green-700 hover:underline">Ver entregas</button>
+                    ) : (
+                      <button onClick={() => goToTab('tareas')} className="text-xs sm:text-sm text-amber-700 hover:underline">Ver tareas</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
           
           {/* Entregas Recientes */}
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
@@ -545,10 +746,13 @@ const Dashboard = () => {
             </div>
             
             <div className="space-y-2 sm:space-y-3 max-h-64 sm:max-h-80 overflow-y-auto">
-              {safeEntregas.slice(-5).reverse().map(entrega => {
+        {safeEntregas.slice(-5).reverse().map((entrega, idx) => {
+                const key = entrega?.id
+                  ? `e-${entrega.id}`
+                  : `e-${entrega.revendedorId || 'r'}-${entrega.tipo_ficha_id || 't'}-${new Date(entrega.fecha_completa || entrega.fecha || Date.now()).getTime()}-${idx}`;
                 const revendedor = safeRevendedores.find(r => r.id === entrega.revendedorId);
                 return (
-                  <div key={entrega.id} className="flex justify-between items-center p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl">
+          <div key={key} className="flex justify-between items-center p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-gray-900 text-sm truncate">{revendedor?.nombre}</p>
                       <p className="text-xs text-gray-600">
@@ -591,14 +795,24 @@ const Dashboard = () => {
                 .sort((a, b) => b.totalInventario - a.totalInventario)
                 .slice(0, 5)
                 .map((revendedor, index) => (
-                <div key={revendedor.id} className="flex justify-between items-center p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl">
+                <div key={`${revendedor.id}-${revendedor.totalInventario}`} className="flex justify-between items-center p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl">
                   <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
                     <div className="w-6 h-6 sm:w-8 sm:h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <span className="text-xs font-bold text-slate-600">{index + 1}</span>
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-gray-900 text-sm truncate">{revendedor.nombre}</p>
-                      <p className="text-xs text-gray-600 truncate">{revendedor.responsable}</p>
+                      {(() => {
+                        const persona = revendedor.responsable || revendedor.nombre || revendedor.nombre_negocio || '—';
+                        const tienda = revendedor.nombre_negocio && revendedor.nombre_negocio !== persona ? revendedor.nombre_negocio : '';
+                        return (
+                          <>
+                            <p className="font-medium text-gray-900 text-sm truncate">{persona}</p>
+                            {tienda && (
+                              <p className="text-xs text-gray-600 truncate">{tienda}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-3">

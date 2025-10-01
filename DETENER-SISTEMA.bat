@@ -8,8 +8,8 @@ echo.
 echo 🔍 Buscando procesos de Node.js...
 
 :: Matar procesos de Node que estén usando los puertos específicos
-echo 📡 Deteniendo Backend (puerto 3001)...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3001') do (
+echo 📡 Deteniendo Backend (puerto 8001)...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8001') do (
     taskkill /f /pid %%a 2>nul
 )
 

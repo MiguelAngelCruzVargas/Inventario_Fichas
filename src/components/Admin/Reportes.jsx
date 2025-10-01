@@ -1,7 +1,7 @@
 // Reportes.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { FileText, Calendar, Download, BarChart2, TrendingUp, Users, Filter } from 'lucide-react';
-import { apiClient } from '../../services/apiClient';
+import { apiClient } from '@services/apiClient';
 import {
   ResponsiveContainer, BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   LineChart as RLineChart, Line, CartesianGrid, LabelList
@@ -240,24 +240,28 @@ const Reportes = () => {
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-3 text-gray-700 font-medium"><BarChart2 className="w-4 h-4"/>Fichas más vendidas</div>
             <div className="space-y-2">
-              {topTipos.map((t, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
+              {topTipos.map((t, i) => {
+                const tipoKey = t.tipo || t.nombre || `tipo-${i}`;
+                return (
+                <div key={tipoKey} className="flex items-center justify-between text-sm">
                   <div className="text-gray-800">{t.tipo}</div>
                   <div className="text-gray-500">{Number(t.unidades).toLocaleString('es-MX')} u</div>
                 </div>
-              ))}
+              )})}
               {topTipos.length === 0 && <div className="text-gray-400 text-sm">Sin datos</div>}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border">
             <div className="flex items-center gap-2 mb-3 text-gray-700 font-medium"><Users className="w-4 h-4"/>Clientes que más generan</div>
             <div className="space-y-2">
-              {topRev.map((r, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
+              {topRev.map((r, i) => {
+                const revKey = r.id || r.nombre || `rev-${i}`;
+                return (
+                <div key={revKey} className="flex items-center justify-between text-sm">
                   <div className="text-gray-800">{r.nombre}</div>
                   <div className="text-gray-500">${Number(r.total_vendido).toLocaleString('es-MX')}</div>
                 </div>
-              ))}
+              )})}
               {topRev.length === 0 && <div className="text-gray-400 text-sm">Sin datos</div>}
             </div>
           </div>

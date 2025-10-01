@@ -32,24 +32,24 @@ echo.
 echo 🚀 Iniciando servidores...
 echo.
 
-:: Iniciar backend en ventana separada
-echo 📡 Iniciando Backend en puerto 8000...
-start "Backend Server" cmd /k "cd backend && npm run dev"
+:: Iniciar backend en ventana separada (puerto 8001)
+echo 📡 Iniciando Backend en puerto 8001...
+start "Backend Server" cmd /k "cd backend && set PORT=8001 && npm run dev"
 
 :: Esperar 3 segundos para que el backend se inicie
 echo ⏳ Esperando que el backend se inicie...
 timeout 3 > nul
 
 :: Iniciar frontend en ventana separada
-echo 🌐 Iniciando Frontend en puerto 5003...
+echo 🌐 Iniciando Frontend en puerto 5173...
 start "Frontend Server" cmd /k "npm run dev"
 
 echo.
 echo ✅ SISTEMA INICIADO CORRECTAMENTE
 echo.
 echo 🌍 URLs del sistema:
-echo   Frontend: http://localhost:5003
-echo   Backend:  http://localhost:8000
+echo   Frontend: http://localhost:5173
+echo   Backend:  http://localhost:8001
 echo.
 echo  Credenciales de prueba:
 echo    Admin:        admin / admin2025

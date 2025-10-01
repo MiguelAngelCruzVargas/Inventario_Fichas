@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fichasService } from '../services/fichasService';
-import { tareasService } from '../services/tareasService';
-import { cortesCajaService } from '../services/cortesCajaService';
-import { useAuth } from './AuthContext';
-import { useUsers } from './UsersContext';
+import { connectRealtime } from '@services/realtimeService';
+import { fichasService } from '@services/fichasService';
+import { tareasService } from '@services/tareasService';
+import { cortesCajaService } from '@services/cortesCajaService';
+import { useAuth } from '@context/AuthContext';
+import { useUsers } from '@context/UsersContext';
 
 const FichasContext = createContext();
 
@@ -172,11 +173,13 @@ export const FichasProvider = ({ children }) => {
       
       // Usar delays para evitar saturar la API
       setTimeout(() => {
-        handleTrabajadoresUpdate();
+  // Llamar a la función pública para recargar trabajadores (evita referencias fuera de scope)
+  recargarTrabajadores();
       }, 1000); // 1 segundo de delay
       
       setTimeout(() => {
-        handleRevendedoresUpdate();
+  // Llamar a la función pública para recargar revendedores
+  recargarRevendedores();
       }, 1500); // 1.5 segundos de delay
     }
   }, [updateTrigger, isAuthenticated, user, userRole]);
@@ -286,19 +289,67 @@ export const FichasProvider = ({ children }) => {
             setTareasMantenimiento([]);
           }
 
-          // También cargar cortes de caja para el revendedor
-          try {
-            const cortesResult = await cortesCajaService.obtenerMisCortes();
-            if (cortesResult.success) {
-              setHistorialCortes(cortesResult.data);
-              console.log('✅ Cortes de caja cargados para revendedor:', cortesResult.data.length);
-            } else {
-              console.warn('⚠️ Error obteniendo cortes para revendedor:', cortesResult.error);
+          // Segunda carga diferida (catch-up) para cubrir tareas creadas justo antes/después del login
+          setTimeout(async () => {
+            try {
+              // Evitar recarga innecesaria si ya tenemos tareas
+              if (!tareasMantenimiento || tareasMantenimiento.length === 0) {
+                const retryResult = await tareasService.obtenerMisTareasRevendedor();
+                if (retryResult.success) {
+                  setTareasMantenimiento(retryResult.tareas);
+                  console.log('🔁 Tareas revendedor recargadas (catch-up diferido):', retryResult.tareas.length);
+                }
+              }
+            } catch (e) {
+              console.warn('⚠️ Error en recarga diferida de tareas revendedor:', e);
+            }
+          }, 2000);
+
+          // Función reutilizable para cargar cortes
+          const cargarMisCortes = async (motivo='init') => {
+            try {
+              const cortesResult = await cortesCajaService.obtenerMisCortes();
+              if (cortesResult.success) {
+                setHistorialCortes(cortesResult.data);
+                console.log(`✅ Cortes de caja (${motivo}) cargados para revendedor:`, cortesResult.data.length);
+              } else {
+                console.warn('⚠️ Error obteniendo cortes para revendedor:', cortesResult.error);
+                setHistorialCortes([]);
+              }
+            } catch (cortesError) {
+              console.warn('⚠️ Error cargando cortes para revendedor:', cortesError);
               setHistorialCortes([]);
             }
-          } catch (cortesError) {
-            console.warn('⚠️ Error cargando cortes para revendedor:', cortesError);
-            setHistorialCortes([]);
+          };
+          await cargarMisCortes('init');
+
+          // Suscribir SSE solo para revendedor (cortes / inventario)
+          try {
+            if (!window.__revendedorSSEDisconnect) {
+              window.__revendedorSSEDisconnect = connectRealtime((type) => {
+                if (type === 'corte-creado' || type === 'corte-abonado' || type === 'inventario-actualizado') {
+                  if (window.__revendedorSSEDisconnect.__rtTimeout) clearTimeout(window.__revendedorSSEDisconnect.__rtTimeout);
+                  window.__revendedorSSEDisconnect.__rtTimeout = setTimeout(() => cargarMisCortes(type), 300);
+                }
+                if (type === 'tarea-creada' || type === 'tarea-actualizada' || type === 'tarea-completada') {
+                  if (window.__revendedorSSEDisconnect.__taskTimeout) clearTimeout(window.__revendedorSSEDisconnect.__taskTimeout);
+                  window.__revendedorSSEDisconnect.__taskTimeout = setTimeout(async () => {
+                    try {
+                      const tareasResult = await tareasService.obtenerMisTareasRevendedor();
+                      if (tareasResult.success) {
+                        setTareasMantenimiento(tareasResult.tareas);
+                        console.log('🔄 Tareas revendedor refrescadas por SSE:', type, tareasResult.tareas.length);
+                      }
+                    } catch (e) {
+                      console.warn('⚠️ Error refrescando tareas revendedor por SSE:', e);
+                    }
+                  }, 250);
+                }
+              });
+              console.log('🔌 SSE revendedor conectado');
+            }
+          } catch (sseErr) {
+            console.warn('⚠️ No se pudo conectar SSE para revendedor:', sseErr);
           }
         } catch (error) {
           console.error('❌ Error cargando datos del revendedor:', {
@@ -365,6 +416,16 @@ export const FichasProvider = ({ children }) => {
       setError(error.message || 'Error al cargar datos');
     } finally {
       setLoading(false);
+
+      // Cleanup SSE si el rol cambia a otro distinto de revendedor
+      if (userRole !== 'revendedor' && window.__revendedorSSEDisconnect) {
+        try {
+          if (window.__revendedorSSEDisconnect.__rtTimeout) clearTimeout(window.__revendedorSSEDisconnect.__rtTimeout);
+          window.__revendedorSSEDisconnect();
+          delete window.__revendedorSSEDisconnect;
+          console.log('🔌 SSE revendedor desconectado (cleanup)');
+        } catch {}
+      }
     }
   };
 
@@ -748,6 +809,20 @@ export const FichasProvider = ({ children }) => {
     }
   };
 
+  // Recargar SOLO las tareas del revendedor autenticado (para vista revendedor)
+  const recargarMisTareasRevendedor = async () => {
+    try {
+      const resultado = await tareasService.obtenerMisTareasRevendedor();
+      if (resultado.success) {
+        setTareasMantenimiento(resultado.tareas);
+      }
+      return resultado;
+    } catch (error) {
+      console.error('Error al recargar mis tareas de revendedor:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   // Gestión de Cortes de Caja
   const cargarHistorialCortes = async (params = {}) => {
     try {
@@ -849,6 +924,7 @@ export const FichasProvider = ({ children }) => {
     crearTrabajadorMantenimiento,
     eliminarTrabajadorMantenimiento,
     recargarTareas,
+  recargarMisTareasRevendedor,
     recargarTrabajadores, // Nueva función para recargar trabajadores
     recargarRevendedores, // Nueva función para recargar revendedores
     

@@ -3,13 +3,43 @@ import { apiClient } from './apiClient';
 // Servicio para manejar cortes de caja
 export const cortesCajaService = {
   // Obtener historial de cortes de caja
-  obtenerHistorial: async (params = {}) => {
+  obtenerHistorial: async (params = {}, retryCount = 0) => {
+    const { limit = 50, offset = 0 } = params;
+    const maxRetries = 3;
     try {
-      const { limit = 50, offset = 0 } = params;
       const response = await apiClient.get(`/cortes-caja/historial?limit=${limit}&offset=${offset}`);
       return response.data;
     } catch (error) {
+      const status = error?.response?.status;
+      if (status === 429 && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 500; // backoff lineal
+        console.warn(`⏳ Historial cortes 429 - reintentando en ${delay}ms (intento ${retryCount + 2}/${maxRetries + 1})`);
+        await new Promise(r => setTimeout(r, delay));
+        return await cortesCajaService.obtenerHistorial(params, retryCount + 1);
+      }
       console.error('Error al obtener historial de cortes:', error);
+      throw error;
+    }
+  },
+
+  // Registrar un abono parcial para un corte
+  abonarCorte: async (id, { monto, nota }) => {
+    try {
+      const response = await apiClient.post(`/cortes-caja/${id}/abonar`, { monto, nota });
+      return response.data;
+    } catch (error) {
+      console.error('Error al abonar corte:', error);
+      throw error;
+    }
+  },
+
+  // Listar abonos de un corte
+  obtenerAbonos: async (id) => {
+    try {
+      const response = await apiClient.get(`/cortes-caja/${id}/abonos`);
+      return response.data;
+    } catch (error) {
+      console.error('Error al obtener abonos del corte:', error);
       throw error;
     }
   },

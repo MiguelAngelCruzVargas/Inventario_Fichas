@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+/* Evitar scroll/pan horizontal en todo el layout */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none; /* Evita rebote/cadena horizontal */
+}
+
+#root, .App {
+  width: 100%;
+  max-width: 100vw; /* Nunca más ancho que el viewport */
+  overflow-x: hidden; /* Corta cualquier desborde accidental */
+  touch-action: pan-y; /* Solo desplazamiento vertical en táctiles */
+}
+
+/* Evitar que medios desborden horizontalmente */
+img, video, svg, canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Utilidades de clamp para múltiples líneas (sin plugin) */
+.clamp-2 {
+  display: -webkit-box;
+  line-clamp: 2; /* standard */
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-3 {
+  display: -webkit-box;
+  line-clamp: 3; /* standard */
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Estilos personalizados para scrollbars */
 .custom-scrollbar {
   scrollbar-width: thin;

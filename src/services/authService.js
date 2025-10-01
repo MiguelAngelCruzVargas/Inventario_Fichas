@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import { getUserFriendlyMessage, conditionalLog } from '../utils/errorHandler';
+import { getUserFriendlyMessage, conditionalLog } from '@utils/errorHandler';
 
 class AuthService {
   constructor() {
@@ -7,6 +7,8 @@ class AuthService {
     this.sessionCheckInterval = null;
     this.expirationWarningShown = false;
   }
+
+  // Métodos checkAdminExists y detectRole se definen más abajo para evitar duplicados
 
   // Login
   async login(credentials) {
@@ -26,14 +28,17 @@ class AuthService {
         expiresIn: response.data.expires_in
       };
     } catch (error) {
-      // Log detallado solo en desarrollo
-      conditionalLog.error('Login error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url,
-        method: error.config?.method
-      });
+      // Evitar logs ruidosos para errores esperados (401 credenciales inválidas)
+      const status = error.response?.status;
+      if (status !== 401) {
+        // Log compacto y solo cuando no es 401
+        conditionalLog.warn('Login fallido no esperado:', {
+          status,
+          statusText: error.response?.statusText,
+          url: error.config?.url,
+          method: error.config?.method
+        });
+      }
       
       // Usar mensaje amigable centralizado
       throw new Error(getUserFriendlyMessage(error));
@@ -193,6 +198,29 @@ class AuthService {
 
   isTrabajador(user) {
     return user?.tipo_usuario === 'trabajador';
+  }
+
+  // Verificar si existe admin
+  async checkAdminExists() {
+    try {
+      const res = await apiClient.get('/auth/admin-exists');
+      return res; // ya es data por apiHelpers, pero aquí usamos apiClient directo: apiClient.get devuelve response; arriba usamos apiClient, mantener consistente
+    } catch (error) {
+      conditionalLog.error('checkAdminExists error:', error);
+      throw error;
+    }
+  }
+
+  // Detectar rol por username
+  async detectRole(username) {
+    try {
+      const res = await apiClient.get(`/auth/detect-role`, { params: { username } });
+      return res; // idem
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      conditionalLog.error('detectRole error:', error);
+      throw error;
+    }
   }
 }
 

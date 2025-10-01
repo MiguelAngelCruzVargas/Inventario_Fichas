@@ -34,6 +34,20 @@ async function cortesTieneRevendedorCols() {
   }
 }
 
+// Verifica si existe una tabla en la BD actual
+async function tableExists(tableName) {
+  try {
+    const r = await query(`
+      SELECT COUNT(*) AS n
+      FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+    `, [tableName]);
+    return (r?.[0]?.n || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 // GET /reportes/resumen - Totales y series (mes/semana/top)
 router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
@@ -107,7 +121,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
   let topRevendedores = await query(`
       SELECT 
         r.id AS revendedor_id,
-        COALESCE(r.nombre_negocio, r.nombre) AS nombre,
+        COALESCE(r.responsable, r.nombre, r.nombre_negocio) AS nombre,
         COALESCE(SUM(v.subtotal),0) AS total_vendido,
         COALESCE(SUM(v.comision_total),0) AS total_revendedor,
         COALESCE(SUM(v.subtotal - v.comision_total),0) AS total_admin,
@@ -115,7 +129,7 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
       FROM ventas v
       JOIN revendedores r ON v.revendedor_id = r.id
       WHERE 1=1 ${whereDate2}
-      GROUP BY r.id, r.nombre, r.nombre_negocio
+      GROUP BY r.id, r.nombre, r.nombre_negocio, r.responsable
       ORDER BY total_vendido DESC
       LIMIT ${parseInt(limit) || 5}
     `, paramsRev);
@@ -398,6 +412,180 @@ router.get('/resumen', authenticateToken, requireRole(['admin']), async (req, re
   }
 });
 
+// Historial global: entregas (revendedores), ventas a ocasionales y pagos de servicio (pagados)
+router.get('/historial-global', authenticateToken, requireRole(['admin','trabajador']), async (req, res) => {
+  try {
+    const { page = 1, pageSize = 25, desde, hasta, tipo, q, tipo_ficha_id } = req.query;
+    const safePage = Math.max(parseInt(page) || 1, 1);
+    const safePageSize = Math.min(Math.max(parseInt(pageSize) || 25, 1), 200);
+    const offset = (safePage - 1) * safePageSize;
+
+    // Descubrir tablas disponibles para construir subconsultas seguras
+    const [hasEntregas, hasRevendedores, hasTipos, hasUsuarios, hasPrecios, hasPreciosRev,
+           hasVO, hasClientes, hasClientesPagos] = await Promise.all([
+      tableExists('entregas'),
+      tableExists('revendedores'),
+      tableExists('tipos_fichas'),
+      tableExists('usuarios'),
+      tableExists('precios'),
+      tableExists('precios_revendedor'),
+      tableExists('ventas_ocasionales'),
+      tableExists('clientes'),
+      tableExists('clientes_pagos')
+    ]);
+
+    // Subconsulta: entregas a revendedores (con precio efectivo si hay tabla precios)
+    let subEntregas = null;
+  if (hasEntregas && hasRevendedores && hasTipos) {
+      const precioExpr = (hasPrecios || hasPreciosRev) ? `COALESCE(
+          (
+            SELECT p2.precio_venta
+            FROM precios p2
+            WHERE p2.revendedor_id = e.revendedor_id
+              AND p2.tipo_ficha_id = e.tipo_ficha_id
+              AND (p2.fecha_vigencia_desde IS NULL OR p2.fecha_vigencia_desde <= DATE(e.created_at))
+              AND (p2.fecha_vigencia_hasta IS NULL OR p2.fecha_vigencia_hasta >= DATE(e.created_at))
+            ORDER BY p2.fecha_vigencia_desde DESC, p2.id DESC
+            LIMIT 1
+          ),
+          (
+            SELECT pr.precio
+            FROM precios_revendedor pr
+            WHERE pr.revendedor_id = e.revendedor_id
+              AND pr.tipo_ficha_id = e.tipo_ficha_id
+            ORDER BY pr.updated_at DESC, pr.created_at DESC, pr.id DESC
+            LIMIT 1
+          ),
+          tf.precio_venta, 0
+        )` : 'COALESCE(tf.precio_venta, 0)';
+      const usuarioExpr = hasUsuarios ? "CONVERT(u.username USING utf8mb4) COLLATE utf8mb4_unicode_ci" : "CAST(NULL AS CHAR(100)) COLLATE utf8mb4_unicode_ci";
+      const joinUsuario = hasUsuarios ? 'LEFT JOIN usuarios u ON e.created_by = u.id' : '';
+      subEntregas = `
+        SELECT 
+          CAST('entrega' AS CHAR(20)) COLLATE utf8mb4_unicode_ci AS tipo_evento,
+          e.created_at AS fecha,
+          CAST('revendedor' AS CHAR(20)) COLLATE utf8mb4_unicode_ci AS entidad_tipo,
+          CONVERT(COALESCE(r.responsable, r.nombre, r.nombre_negocio) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entidad_nombre,
+          tf.id AS tipo_ficha_id,
+          CONVERT(tf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS tipo_ficha_nombre,
+          tf.duracion_horas,
+          e.cantidad AS cantidad,
+          ${precioExpr} AS precio_unitario,
+          (e.cantidad * ${precioExpr}) AS monto,
+          CONVERT(e.tipo_movimiento USING utf8mb4) COLLATE utf8mb4_unicode_ci AS tipo_movimiento,
+          ${usuarioExpr} AS usuario,
+          NULL AS periodo_year,
+          NULL AS periodo_month
+        FROM entregas e
+        JOIN revendedores r ON e.revendedor_id = r.id
+        JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+        ${joinUsuario}
+        WHERE r.activo = 1 AND tf.activo = 1
+      `;
+    }
+
+    // Subconsulta: ventas a clientes ocasionales
+    let subVO = null;
+    if (hasVO && hasClientes && hasTipos) {
+      const usuarioExpr2 = hasUsuarios ? "CONVERT(u.username USING utf8mb4) COLLATE utf8mb4_unicode_ci" : "CAST(NULL AS CHAR(100)) COLLATE utf8mb4_unicode_ci";
+      const joinUsuario2 = hasUsuarios ? 'LEFT JOIN usuarios u ON vo.usuario_id = u.id' : '';
+      subVO = `
+        SELECT 
+          CAST('venta_ocasional' AS CHAR(30)) COLLATE utf8mb4_unicode_ci AS tipo_evento,
+          vo.created_at AS fecha,
+          CAST('cliente_ocasional' AS CHAR(30)) COLLATE utf8mb4_unicode_ci AS entidad_tipo,
+          CONVERT(c.nombre_completo USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entidad_nombre,
+          tf.id AS tipo_ficha_id,
+          CONVERT(tf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS tipo_ficha_nombre,
+          tf.duracion_horas,
+          vo.cantidad AS cantidad,
+          vo.precio_unitario AS precio_unitario,
+          vo.subtotal AS monto,
+          CAST(NULL AS CHAR(20)) COLLATE utf8mb4_unicode_ci AS tipo_movimiento,
+          ${usuarioExpr2} AS usuario,
+          NULL AS periodo_year,
+          NULL AS periodo_month
+        FROM ventas_ocasionales vo
+        JOIN clientes c ON vo.cliente_id = c.id
+        JOIN tipos_fichas tf ON vo.tipo_ficha_id = tf.id
+        ${joinUsuario2}
+        WHERE c.tipo = 'ocasional' AND c.activo = 1
+      `;
+    }
+
+    // Subconsulta: pagos de servicio (solo pagados)
+    let subPagos = null;
+  if (hasClientesPagos && hasClientes) {
+      subPagos = `
+        SELECT 
+      CAST('pago_servicio' AS CHAR(30)) COLLATE utf8mb4_unicode_ci AS tipo_evento,
+          cp.pagado_at AS fecha,
+      CAST('cliente_servicio' AS CHAR(30)) COLLATE utf8mb4_unicode_ci AS entidad_tipo,
+      CONVERT(c.nombre_completo USING utf8mb4) COLLATE utf8mb4_unicode_ci AS entidad_nombre,
+          NULL AS tipo_ficha_id,
+      CAST(NULL AS CHAR(150)) COLLATE utf8mb4_unicode_ci AS tipo_ficha_nombre,
+          NULL AS duracion_horas,
+          NULL AS cantidad,
+      NULL AS precio_unitario,
+          cp.monto AS monto,
+      CAST(NULL AS CHAR(20)) COLLATE utf8mb4_unicode_ci AS tipo_movimiento,
+      CAST(NULL AS CHAR(100)) COLLATE utf8mb4_unicode_ci AS usuario,
+          cp.periodo_year AS periodo_year,
+          cp.periodo_month AS periodo_month
+        FROM clientes_pagos cp
+        JOIN clientes c ON cp.cliente_id = c.id
+        WHERE c.tipo = 'servicio' AND c.activo = 1 AND cp.estado = 'pagado' AND cp.pagado_at IS NOT NULL
+      `;
+    }
+
+    // Armar las subconsultas disponibles
+    const subs = [subEntregas, subVO, subPagos].filter(Boolean);
+    if (subs.length === 0) {
+      return res.json({ page: safePage, pageSize: safePageSize, total: 0, items: [] });
+    }
+    const unionSQL = subs.join('\nUNION ALL\n');
+
+    // WHERE dinámico para el wrapper
+    const outerWhere = [];
+    const params = [];
+    if (desde) { outerWhere.push('DATE(x.fecha) >= ?'); params.push(desde); }
+    if (hasta) { outerWhere.push('DATE(x.fecha) <= ?'); params.push(hasta); }
+    if (tipo && ['entrega','venta_ocasional','pago_servicio'].includes(String(tipo))) {
+      outerWhere.push('x.tipo_evento = ?'); params.push(tipo);
+    }
+    if (q) {
+      outerWhere.push('(x.entidad_nombre LIKE ? OR x.tipo_ficha_nombre LIKE ?)');
+      const like = `%${q}%`; params.push(like, like);
+    }
+    if (tipo_ficha_id) { outerWhere.push('(x.tipo_ficha_id = ?)'); params.push(parseInt(tipo_ficha_id)); }
+    const whereSQL = outerWhere.length ? `WHERE ${outerWhere.join(' AND ')}` : '';
+
+    // Conteo total
+    const totalRows = await query(`
+      SELECT COUNT(*) AS total FROM (
+        ${unionSQL}
+      ) x
+      ${whereSQL}
+    `, params);
+    const total = totalRows?.[0]?.total || 0;
+
+    // Datos paginados
+    const data = await query(`
+      SELECT * FROM (
+        ${unionSQL}
+      ) x
+      ${whereSQL}
+      ORDER BY x.fecha DESC
+      LIMIT ? OFFSET ?
+    `, [...params, safePageSize, offset]);
+
+    res.json({ page: safePage, pageSize: safePageSize, total, items: data });
+  } catch (error) {
+    console.error('Error en /reportes/historial-global:', error);
+    res.status(500).json({ error: 'Error interno del servidor', detail: 'No se pudo obtener el historial global' });
+  }
+});
+
 // GET /reportes/export - Exportar CSV (compatible con Excel)
 router.get('/export', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
@@ -408,10 +596,10 @@ router.get('/export', authenticateToken, requireRole(['admin']), async (req, res
     const whereDate = buildDateWhere('v.fecha_venta', fecha_desde, fecha_hasta, params);
 
     // 1) Ventas detalladas
-    const rowsVentas = await query(`
+  const rowsVentas = await query(`
       SELECT 
         v.fecha_venta,
-        r.nombre_negocio AS revendedor,
+    COALESCE(r.responsable, r.nombre, r.nombre_negocio) AS revendedor,
         tf.nombre AS tipo_ficha,
         v.cantidad,
         v.precio_unitario,

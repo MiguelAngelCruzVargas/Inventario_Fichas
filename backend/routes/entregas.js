@@ -1,22 +1,166 @@
 import express from 'express';
 import { query } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
+import bus from '../events/bus.js';
 
 const router = express.Router();
+
+// Helper para construir filtros seguros
+function buildWhere(filters, params) {
+  const where = [];
+  if (filters.revendedor_id) {
+    where.push('e.revendedor_id = ?');
+    params.push(parseInt(filters.revendedor_id));
+  }
+  if (filters.revendedor) {
+    where.push('(r.responsable LIKE ? OR r.nombre LIKE ? OR r.nombre_negocio LIKE ?)');
+    const like = `%${filters.revendedor}%`;
+    params.push(like, like, like);
+  }
+  if (filters.tipo_ficha_id) {
+    where.push('e.tipo_ficha_id = ?');
+    params.push(parseInt(filters.tipo_ficha_id));
+  }
+  if (filters.desde) {
+    where.push('DATE(e.created_at) >= ?');
+    params.push(filters.desde);
+  }
+  if (filters.hasta) {
+    where.push('DATE(e.created_at) <= ?');
+    params.push(filters.hasta);
+  }
+  return where.length ? `AND ${where.join(' AND ')}` : '';
+}
+
+// GET /entregas/historial - Historial detallado con precio y paginación
+router.get('/historial', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 25, revendedor_id, tipo_ficha_id, desde, hasta } = req.query;
+
+  const userRole = req.user?.role;
+    const userRevendedorId = req.user?.revendedor_id;
+
+    const safePage = Math.max(parseInt(page) || 1, 1);
+    const safePageSize = Math.min(Math.max(parseInt(pageSize) || 25, 1), 200);
+    const offset = (safePage - 1) * safePageSize;
+
+    // Filtros base: activos
+    const params = [];
+    let extraWhere = buildWhere({ revendedor_id, tipo_ficha_id, desde, hasta }, params);
+
+    // Restricción por rol: revendedor sólo ve lo suyo
+    if (userRole === 'revendedor') {
+      extraWhere += (extraWhere ? ' AND ' : 'AND ') + 'e.revendedor_id = ?';
+      params.push(userRevendedorId);
+    } else if (userRole !== 'admin' && userRole !== 'trabajador') {
+      return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    // Conteo total
+    const totalRows = await query(
+      `SELECT COUNT(*) as total
+       FROM entregas e
+       JOIN revendedores r ON e.revendedor_id = r.id
+       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+       WHERE r.activo = 1 AND tf.activo = 1 ${extraWhere}`,
+      params
+    );
+    const total = totalRows?.[0]?.total || 0;
+
+    // Datos con precio efectivo por fecha (si existe en precios) o fallback a precio de tipo_ficha
+    const data = await query(
+  `SELECT 
+         e.id,
+         e.revendedor_id,
+       e.created_by AS usuario_id,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) AS revendedor_nombre,
+         e.tipo_ficha_id,
+         tf.nombre AS tipo_ficha_nombre,
+         tf.duracion_horas,
+         e.cantidad,
+         e.tipo_movimiento,
+         e.created_at AS fecha_entrega,
+         COALESCE(tm.nombre_completo, u.username) AS usuario_entrega,
+         COALESCE(
+           (
+             SELECT p2.precio_venta
+             FROM precios p2
+             WHERE p2.revendedor_id = e.revendedor_id
+               AND p2.tipo_ficha_id = e.tipo_ficha_id
+               AND (p2.fecha_vigencia_desde IS NULL OR p2.fecha_vigencia_desde <= DATE(e.created_at))
+               AND (p2.fecha_vigencia_hasta IS NULL OR p2.fecha_vigencia_hasta >= DATE(e.created_at))
+             ORDER BY p2.fecha_vigencia_desde DESC, p2.id DESC
+             LIMIT 1
+           ),
+           (
+             SELECT pr.precio
+             FROM precios_revendedor pr
+             WHERE pr.revendedor_id = e.revendedor_id
+               AND pr.tipo_ficha_id = e.tipo_ficha_id
+             ORDER BY pr.updated_at DESC, pr.created_at DESC, pr.id DESC
+             LIMIT 1
+           ),
+           tf.precio_venta, 0
+         ) AS precio_unitario,
+         (e.cantidad * COALESCE(
+           (
+             SELECT p3.precio_venta
+             FROM precios p3
+             WHERE p3.revendedor_id = e.revendedor_id
+               AND p3.tipo_ficha_id = e.tipo_ficha_id
+               AND (p3.fecha_vigencia_desde IS NULL OR p3.fecha_vigencia_desde <= DATE(e.created_at))
+               AND (p3.fecha_vigencia_hasta IS NULL OR p3.fecha_vigencia_hasta >= DATE(e.created_at))
+             ORDER BY p3.fecha_vigencia_desde DESC, p3.id DESC
+             LIMIT 1
+           ),
+           (
+             SELECT pr2.precio
+             FROM precios_revendedor pr2
+             WHERE pr2.revendedor_id = e.revendedor_id
+               AND pr2.tipo_ficha_id = e.tipo_ficha_id
+             ORDER BY pr2.updated_at DESC, pr2.created_at DESC, pr2.id DESC
+             LIMIT 1
+           ),
+           tf.precio_venta, 0
+         )) AS subtotal
+       FROM entregas e
+       JOIN revendedores r ON e.revendedor_id = r.id
+       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+       LEFT JOIN usuarios u ON e.created_by = u.id
+       LEFT JOIN trabajadores_mantenimiento tm ON tm.usuario_id = u.id
+       WHERE r.activo = 1 AND tf.activo = 1 ${extraWhere}
+       ORDER BY e.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, safePageSize, offset]
+    );
+
+    res.json({
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      items: data
+    });
+  } catch (error) {
+    console.error('Error en /entregas/historial:', error);
+    res.status(500).json({ error: 'Error interno del servidor', detail: 'No se pudo obtener el historial' });
+  }
+});
 
 // GET /entregas - Obtener todas las entregas
 router.get('/', authenticateToken, requireRole(['admin', 'trabajador']), async (req, res) => {
   try {
-    const entregas = await query(`
+  const entregas = await query(`
       SELECT e.id, e.revendedor_id, e.tipo_ficha_id, e.cantidad, 
              e.tipo_movimiento, e.nota, e.created_at as fecha_entrega,
-             r.nombre_negocio as revendedor_nombre,
+  e.created_by AS usuario_id,
+       COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             u.username as usuario_entrega
+        COALESCE(tm.nombre_completo, u.username) as usuario_entrega
       FROM entregas e
       JOIN revendedores r ON e.revendedor_id = r.id
       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
       LEFT JOIN usuarios u ON e.created_by = u.id
+      LEFT JOIN trabajadores_mantenimiento tm ON tm.usuario_id = u.id
       WHERE r.activo = 1 AND tf.activo = 1
       ORDER BY e.created_at DESC
     `);
@@ -39,7 +183,7 @@ router.get('/me', authenticateToken, requireRole(['revendedor']), async (req, re
     console.log('GET /entregas/me - Debug:', {
       userId: req.user.id,
       username: req.user.username,
-      userRole: req.user.tipo_usuario,
+      userRole: req.user.role,
       revendedorId: revendedorId
     });
     
@@ -52,16 +196,18 @@ router.get('/me', authenticateToken, requireRole(['revendedor']), async (req, re
       });
     }
 
-    const entregas = await query(`
+  const entregas = await query(`
       SELECT e.id, e.revendedor_id, e.tipo_ficha_id, e.cantidad,
              e.tipo_movimiento, e.nota, e.created_at as fecha_entrega,
-             r.nombre_negocio as revendedor_nombre,
+  e.created_by AS usuario_id,
+       COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             u.username as usuario_entrega
+        COALESCE(tm.nombre_completo, u.username) as usuario_entrega
       FROM entregas e
       JOIN revendedores r ON e.revendedor_id = r.id
       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
       LEFT JOIN usuarios u ON e.created_by = u.id
+      LEFT JOIN trabajadores_mantenimiento tm ON tm.usuario_id = u.id
       WHERE e.revendedor_id = ? AND r.activo = 1 AND tf.activo = 1
       ORDER BY e.created_at DESC
     `, [revendedorId]);
@@ -81,7 +227,7 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    const userRole = req.user.tipo_usuario;
+  const userRole = req.user.role;
     const userRevendedorId = req.user.revendedor_id;
 
     // Verificar permisos: admin puede ver cualquier revendedor, revendedor solo sus datos
@@ -106,16 +252,18 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    const entregas = await query(`
+  const entregas = await query(`
       SELECT e.id, e.revendedor_id, e.tipo_ficha_id, e.cantidad,
              e.tipo_movimiento, e.nota, e.created_at as fecha_entrega,
-             r.nombre_negocio as revendedor_nombre,
+  e.created_by AS usuario_id,
+       COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             u.username as usuario_entrega
+        COALESCE(tm.nombre_completo, u.username) as usuario_entrega
       FROM entregas e
       JOIN revendedores r ON e.revendedor_id = r.id
       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
       LEFT JOIN usuarios u ON e.created_by = u.id
+      LEFT JOIN trabajadores_mantenimiento tm ON tm.usuario_id = u.id
       WHERE e.revendedor_id = ? AND r.activo = 1 AND tf.activo = 1
       ORDER BY e.created_at DESC
     `, [id]);
@@ -222,20 +370,42 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
     }
 
     // Obtener la entrega creada con datos relacionados
-    const nuevaEntrega = await query(`
+  const nuevaEntrega = await query(`
       SELECT e.id, e.revendedor_id, e.tipo_ficha_id, e.cantidad,
              e.tipo_movimiento, e.nota, e.created_at as fecha_entrega,
-             r.nombre_negocio as revendedor_nombre,
+  e.created_by AS usuario_id,
+       COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             u.username as usuario_entrega
+        COALESCE(tm.nombre_completo, u.username) as usuario_entrega
       FROM entregas e
       JOIN revendedores r ON e.revendedor_id = r.id
       JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
       LEFT JOIN usuarios u ON e.created_by = u.id
+      LEFT JOIN trabajadores_mantenimiento tm ON tm.usuario_id = u.id
       WHERE e.id = ?
     `, [result.insertId]);
 
-    res.status(201).json(nuevaEntrega[0]);
+    const created = nuevaEntrega[0];
+    // Broadcast SSE event for new entrega
+    try {
+      bus.emit('broadcast', {
+        type: 'entrega-creada',
+        payload: {
+          id: created.id,
+          revendedor_id: created.revendedor_id,
+          revendedor_nombre: created.revendedor_nombre,
+          tipo_ficha_id: created.tipo_ficha_id,
+          tipo_ficha_nombre: created.tipo_ficha_nombre,
+          cantidad: created.cantidad,
+          tipo_movimiento: created.tipo_movimiento,
+          fecha_entrega: created.fecha_entrega,
+          usuario_id: created.usuario_id,
+          usuario_entrega: created.usuario_entrega
+        }
+      });
+    } catch {}
+
+    res.status(201).json(created);
 
   } catch (error) {
     console.error('Error al crear entrega:', error);

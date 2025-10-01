@@ -1,6 +1,6 @@
 // routes/usuarios.js - Gestión completa de usuarios
 import express from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { db } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
 import { query } from '../database.js';
@@ -11,11 +11,15 @@ const router = express.Router();
 router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     console.log('🔍 Obteniendo lista consolidada de usuarios...');
+    const includeInactive = req.query.includeInactive === '1' || req.query.includeInactive === 'true';
     
+    const whereClause = includeInactive ? '' : 'WHERE u.activo = 1';
     const [usuarios] = await db.execute(`
-      SELECT 
+  SELECT 
         u.id,
-        u.username,
+  u.username,
+  u.revendedor_id,
+  u.cliente_id,
         COALESCE(u.role, u.tipo_usuario, 'admin') as role,
         CASE WHEN u.activo = 1 THEN true ELSE false END as active,
         u.created_at,
@@ -39,12 +43,26 @@ router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
           ELSE NULL
         END as direccion,
         CASE 
-          WHEN COALESCE(u.role, u.tipo_usuario) = 'revendedor' THEN COALESCE(r.porcentaje_comision, 20.00)
+          WHEN COALESCE(u.role, u.tipo_usuario) = 'revendedor' THEN r.latitud
+          ELSE NULL
+        END as latitud,
+        CASE 
+          WHEN COALESCE(u.role, u.tipo_usuario) = 'revendedor' THEN r.longitud
+          ELSE NULL
+        END as longitud,
+        CASE 
+          WHEN COALESCE(u.role, u.tipo_usuario) = 'revendedor' THEN (
+            CASE WHEN r.porcentaje_comision IS NOT NULL AND r.porcentaje_comision > 0 
+                 THEN r.porcentaje_comision 
+                 ELSE NULL 
+            END
+          )
           ELSE NULL
         END as porcentaje_comision
       FROM usuarios u
       LEFT JOIN revendedores r ON u.id = r.usuario_id
-      LEFT JOIN trabajadores_mantenimiento tm ON u.id = tm.usuario_id
+  LEFT JOIN trabajadores_mantenimiento tm ON u.id = tm.usuario_id
+      ${whereClause}
       ORDER BY 
         u.activo DESC, 
         CASE COALESCE(u.role, u.tipo_usuario)
@@ -61,7 +79,7 @@ router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
       console.log(`  - ID: ${user.id}, Username: ${user.username}, Role: ${user.role}, Active: ${user.active}`);
     });
     
-    res.json(usuarios);
+  res.json({ includeInactive, usuarios });
   } catch (error) {
     console.error('Error al obtener usuarios:', error);
     res.status(500).json({ message: 'Error al obtener usuarios' });
@@ -85,6 +103,9 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
       nombre_negocio, 
       direccion,
       especialidad,
+      latitud,
+      longitud,
+      cliente_id,
       active = true 
     } = req.body;
 
@@ -97,6 +118,19 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
     // Validaciones básicas
     if (!username || !password || !role) {
       return res.status(400).json({ message: 'Faltan campos obligatorios: username, password, role' });
+    }
+
+    // Validar roles permitidos
+    const allowedRoles = ['admin', 'trabajador', 'revendedor', 'cliente'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'Rol inválido' });
+    }
+
+    // Si es cliente, cliente_id es obligatorio
+    if (role === 'cliente') {
+      if (!cliente_id) {
+        return res.status(400).json({ message: 'Debe especificar cliente_id para rol cliente' });
+      }
     }
 
     console.log('🔄 CREACIÓN UNIFICADA - Rol detectado:', role);
@@ -178,19 +212,18 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
     });
 
     // Crear usuario principal
-    const [result] = await db.execute(
-      `INSERT INTO usuarios (
-        username, 
-        password_hash, 
-        role, 
-        tipo_usuario, 
-        activo, 
-        nombre_completo, 
-        telefono, 
-        email
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      insertParams
-    );
+    // Incluir cliente_id si viene y el rol es cliente
+    let insertSql = `INSERT INTO usuarios (
+        username, password_hash, role, tipo_usuario, activo, nombre_completo, telefono, email`;
+    let insertPlaceholders = '?, ?, ?, ?, ?, ?, ?, ?';
+    if (role === 'cliente' && cliente_id) {
+      insertSql += ', cliente_id';
+      insertPlaceholders += ', ?';
+      insertParams.push(Number(cliente_id));
+    }
+    insertSql += `) VALUES (${insertPlaceholders})`;
+
+    const [result] = await db.execute(insertSql, insertParams);
 
     const userId = result.insertId;
     console.log('✅ Usuario base creado con ID:', userId);
@@ -206,10 +239,12 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
             nombre_negocio, 
             responsable, 
             telefono, 
-            direccion, 
+            direccion,
+            latitud,
+            longitud, 
             porcentaje_comision, 
             activo
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             userId,
             nombre_completo || username, 
@@ -217,7 +252,9 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
             nombre_completo || username,
             telefono || '', 
             direccion || '', 
-            20.00, // Comisión por defecto
+            latitud !== undefined && latitud !== null && latitud !== '' ? Number(latitud) : null,
+            longitud !== undefined && longitud !== null && longitud !== '' ? Number(longitud) : null,
+            0.00, // 0 indica "usar global" (no personalizado)
             active ? 1 : 0
           ]
         );
@@ -301,7 +338,10 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
       responsable, 
       nombre_negocio, 
       direccion,
-      especialidad 
+      especialidad,
+  latitud,
+      longitud,
+      cliente_id 
     } = req.body;
 
     // Obtener información actual del usuario
@@ -342,11 +382,15 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
     }
 
     if (role !== undefined) {
+      const allowedRoles = ['admin', 'trabajador', 'revendedor', 'cliente'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ message: 'Rol inválido' });
+      }
       updateFields.push('role = ?, tipo_usuario = ?');
       updateValues.push(role, role);
     }
 
-    if (active !== undefined) {
+  if (active !== undefined) {
       updateFields.push('activo = ?');
       updateValues.push(active);
       
@@ -376,6 +420,16 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
         );
         console.log(`✅ Estado actualizado en tabla trabajadores_mantenimiento para usuario ${id}`);
       }
+
+      // Actualizar en tabla clientes si es usuario de tipo cliente
+      const [usuarioCliente] = await db.execute(
+        'SELECT cliente_id FROM usuarios WHERE id = ? AND COALESCE(role, tipo_usuario) = "cliente"',
+        [id]
+      );
+      if (usuarioCliente.length > 0 && usuarioCliente[0].cliente_id) {
+        await db.execute('UPDATE clientes SET activo = ? WHERE id = ?', [active ? 1 : 0, usuarioCliente[0].cliente_id]);
+        console.log(`✅ Estado actualizado en tabla clientes (id=${usuarioCliente[0].cliente_id}) para usuario ${id}`);
+      }
     }
 
     if (nombre_completo !== undefined) {
@@ -403,6 +457,11 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
       updateValues.push(email && email.trim() ? email.trim() : null);
     }
 
+    if (cliente_id !== undefined) {
+      updateFields.push('cliente_id = ?');
+      updateValues.push(cliente_id ? Number(cliente_id) : null);
+    }
+
     if (updateFields.length > 0) {
       updateQuery += updateFields.join(', ') + ' WHERE id = ?';
       updateValues.push(id);
@@ -413,6 +472,9 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
     const newRole = role || currentRole;
     
     if (newRole !== currentRole) {
+      if (newRole === 'cliente' && (cliente_id === undefined || !cliente_id)) {
+        return res.status(400).json({ message: 'Debe especificar cliente_id al cambiar rol a cliente' });
+      }
       // VERIFICAR TAREAS ANTES DE ELIMINAR TRABAJADOR
       if (currentRole === 'trabajador') {
         const [tareasAsignadas] = await db.execute(
@@ -441,8 +503,8 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
       if (newRole === 'revendedor') {
         const [revendedorResult] = await db.execute(
           `INSERT INTO revendedores (
-            usuario_id, nombre, nombre_negocio, responsable, telefono, direccion, porcentaje_comision, activo
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            usuario_id, nombre, nombre_negocio, responsable, telefono, direccion, latitud, longitud, porcentaje_comision, activo
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             nombre_completo || username || currentUser[0].username,
@@ -450,6 +512,8 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
             responsable || '',
             telefono || '',
             direccion || '',
+            latitud !== undefined && latitud !== null && latitud !== '' ? Number(latitud) : null,
+            longitud !== undefined && longitud !== null && longitud !== '' ? Number(longitud) : null,
             20.00,
             active !== undefined ? (active ? 1 : 0) : 1
           ]
@@ -477,7 +541,7 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
       }
     } else {
       // Actualizar en tabla específica existente
-      if (newRole === 'revendedor') {
+  if (newRole === 'revendedor') {
         const updateRevendedor = [];
         const valuesRevendedor = [];
         
@@ -496,6 +560,14 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
         if (direccion !== undefined) {
           updateRevendedor.push('direccion = ?');
           valuesRevendedor.push(direccion);
+        }
+        if (latitud !== undefined) {
+          updateRevendedor.push('latitud = ?');
+          valuesRevendedor.push(latitud !== null && latitud !== '' ? Number(latitud) : null);
+        }
+        if (longitud !== undefined) {
+          updateRevendedor.push('longitud = ?');
+          valuesRevendedor.push(longitud !== null && longitud !== '' ? Number(longitud) : null);
         }
         if (active !== undefined) {
           updateRevendedor.push('activo = ?');
@@ -683,6 +755,7 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
   try {
     const { id } = req.params;
     console.log(`Intentando eliminar usuario con ID: ${id}`);
+    const hardRequested = req.query.hard === '1' || req.query.hard === 'true';
 
     // Obtener información del usuario antes de eliminar
     const [userInfo] = await db.execute('SELECT username, COALESCE(role, tipo_usuario) as role FROM usuarios WHERE id = ?', [id]);
@@ -729,103 +802,173 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
       }
     }
 
-    // Usar CASCADE DELETE automático para trabajadores y otros roles
+    // Usar CASCADE DELETE automático para trabajadores y otros roles o hard delete de revendedor
     let eliminationResult;
-    
+
     if (user.role === 'revendedor') {
-      console.log(`🏪 Eliminando revendedor con eliminación en cascada completa...`);
-      
-      // 1. OBTENER INFORMACIÓN DETALLADA ANTES DE ELIMINAR
-      console.log('📊 Obteniendo información detallada del revendedor...');
-      
+      console.log('🏪 Solicitud de eliminación de revendedor');
+
+      // Obtener resumen de datos para decidir si se permite hard delete
       const [revendedorInfo] = await db.execute(`
         SELECT 
-          r.*,
+          r.id,
           (SELECT COUNT(*) FROM inventarios WHERE revendedor_id = r.id) as total_inventarios,
           (SELECT COALESCE(SUM(stock_actual), 0) FROM inventarios WHERE revendedor_id = r.id) as fichas_pendientes,
           (SELECT COUNT(*) FROM ventas WHERE revendedor_id = r.id) as total_ventas,
-          (SELECT COALESCE(SUM(monto_total), 0) FROM ventas WHERE revendedor_id = r.id) as monto_total_ventas,
           (SELECT COUNT(*) FROM entregas WHERE revendedor_id = r.id) as total_entregas,
           (SELECT COUNT(*) FROM cortes_caja WHERE usuario_id = r.usuario_id) as total_cortes_caja
-        FROM revendedores r 
-        WHERE r.usuario_id = ?
+        FROM revendedores r WHERE r.usuario_id = ?
       `, [id]);
-      
-      if (revendedorInfo.length === 0) {
-        console.log('⚠️ No se encontró información del revendedor en la tabla específica');
-      } else {
-        const info = revendedorInfo[0];
-        console.log('📋 INFORMACIÓN DEL REVENDEDOR A ELIMINAR:');
-        console.log(`  - Inventarios: ${info.total_inventarios}`);
-        console.log(`  - Fichas pendientes: ${info.fichas_pendientes}`);
-        console.log(`  - Ventas realizadas: ${info.total_ventas}`);
-        console.log(`  - Monto total vendido: $${info.monto_total_ventas}`);
-        console.log(`  - Entregas: ${info.total_entregas}`);
-        console.log(`  - Cortes de caja: ${info.total_cortes_caja}`);
-        
-        // VALIDACIÓN ESTRICTA: No permitir eliminación si hay datos importantes
-        const hasImportantData = 
-          info.fichas_pendientes > 0 || 
-          info.total_ventas > 0 || 
-          info.total_entregas > 0 || 
-          info.total_cortes_caja > 0;
-          
-        if (hasImportantData) {
-          const issues = [];
-          if (info.fichas_pendientes > 0) issues.push(`${info.fichas_pendientes} fichas pendientes`);
-          if (info.total_ventas > 0) issues.push(`${info.total_ventas} ventas registradas`);
-          if (info.total_entregas > 0) issues.push(`${info.total_entregas} entregas realizadas`);
-          if (info.total_cortes_caja > 0) issues.push(`${info.total_cortes_caja} cortes de caja`);
-          
-          console.log(`🚨 ELIMINACIÓN BLOQUEADA - El revendedor tiene datos importantes:`);
-          issues.forEach(issue => console.log(`  - ${issue}`));
-          
-          return res.status(400).json({ 
-            message: `⚠️ ELIMINACIÓN BLOQUEADA: Este revendedor tiene historial importante que se perdería permanentemente:
 
-📊 DATOS QUE SE ELIMINARÍAN:
-${issues.map(issue => `• ${issue}`).join('\n')}
+      const info = revendedorInfo[0];
+      const hasImportantData = info && (
+        info.fichas_pendientes > 0 ||
+        info.total_ventas > 0 ||
+        info.total_entregas > 0 ||
+        info.total_cortes_caja > 0
+      );
 
-💡 RECOMENDACIONES:
-• Si ya no vende: DESACTÍVALO temporalmente (botón del ojo)
-• Si necesitas eliminar: Exporta reportes primero
-• Si tiene fichas pendientes: Recupéralas o reasígnalas
+      if (!hardRequested) {
+        // Soft delete por defecto: desactivar usuario y revendedor, conservar historial
+        await db.execute('UPDATE usuarios SET activo = 0 WHERE id = ?', [id]);
+        await db.execute('UPDATE revendedores SET activo = 0 WHERE usuario_id = ?', [id]);
+        console.log(`🗂️ Soft delete aplicado (usuario y revendedor desactivados) id=${id}`);
+        return res.json({
+          message: 'Revendedor desactivado (soft delete) - historial preservado',
+          softDeleted: true,
+          hardDeleteAvailable: !hasImportantData,
+          canHardDelete: !hasImportantData,
+          hasImportantData,
+          warning: hasImportantData ? 'Tiene historial (fichas, ventas, entregas o cortes); utiliza hard delete sólo si asumes la pérdida.' : null
+        });
+      }
 
-❌ La eliminación permanente borrará TODO el historial y no se puede recuperar.`,
-            type: 'DELETION_BLOCKED_DATA_LOSS',
-            data: {
-              revendedor_info: info,
-              issues: issues
-            }
+      // Hard delete solicitado con ?hard=1
+      if (hardRequested && hasImportantData) {
+        return res.status(400).json({
+          message: 'Hard delete bloqueado: el revendedor aún tiene historial (fichas, ventas, entregas o cortes). Desactívalo o limpia primero.',
+          softDeleted: false,
+          hasImportantData: true
+        });
+      }
+
+      console.log('🗑️ Hard delete autorizado para revendedor (sin historial crítico)');
+      eliminationResult = await query('DELETE FROM usuarios WHERE id = ?', [id]);
+      console.log(`✅ Revendedor eliminado definitivamente id=${id}`);
+    } else if (user.role === 'cliente') {
+      console.log('👥 Solicitud de eliminación de cliente');
+      // Obtener cliente_id asociado
+      const [usuarioCliente] = await db.execute('SELECT cliente_id FROM usuarios WHERE id = ?', [id]);
+      if (!usuarioCliente.length || !usuarioCliente[0].cliente_id) {
+        return res.status(400).json({ message: 'Este usuario no tiene cliente asociado' });
+      }
+      const clienteId = usuarioCliente[0].cliente_id;
+
+      // Obtener resumen de historial
+      const [[pagos]] = await db.execute('SELECT COUNT(*) as count FROM clientes_pagos WHERE cliente_id = ?', [clienteId]);
+      const [[equipos]] = await db.execute('SELECT COUNT(*) as count FROM equipos WHERE cliente_id = ?', [clienteId]);
+      let ventasCount = { count: 0 };
+      try {
+        const [[v]] = await db.execute('SELECT COUNT(*) as count FROM ventas WHERE cliente_id = ?', [clienteId]);
+        ventasCount = v;
+      } catch {}
+      let ventasOcasionalesCount = { count: 0 };
+      try {
+        const [[vo]] = await db.execute('SELECT COUNT(*) as count FROM ventas_ocasionales WHERE cliente_id = ?', [clienteId]);
+        ventasOcasionalesCount = vo;
+      } catch {}
+
+      const hasHistory = pagos.count > 0 || equipos.count > 0 || ventasCount.count > 0 || ventasOcasionalesCount.count > 0;
+
+      if (!hardRequested) {
+        // Soft delete: sólo desactivar
+        await db.execute('UPDATE usuarios SET activo = 0 WHERE id = ?', [id]);
+        await db.execute('UPDATE clientes SET activo = 0 WHERE id = ?', [clienteId]);
+        console.log(`🗂️ Soft delete aplicado a cliente usuario_id=${id}, cliente_id=${clienteId}`);
+        return res.json({
+          message: 'Cliente desactivado (soft delete) - historial preservado',
+            softDeleted: true,
+            hardDeleteAvailable: !hasHistory,
+            canHardDelete: !hasHistory,
+            hasHistory,
+            history: {
+              pagos: pagos.count,
+              equipos: equipos.count,
+              ventas: ventasCount.count,
+              ventas_ocasionales: ventasOcasionalesCount.count
+            },
+            warning: hasHistory ? 'Tiene historial (pagos, equipos o ventas); hard delete lo eliminaría definitivamente.' : null
+        });
+      }
+
+      if (hardRequested && hasHistory) {
+        return res.status(400).json({
+          message: 'Hard delete bloqueado: el cliente tiene historial (pagos, equipos o ventas). Usa soft delete.',
+          hasHistory: true
+        });
+      }
+
+      console.log('🗑️ Hard delete autorizado para cliente sin historial');
+      eliminationResult = await query('DELETE FROM usuarios WHERE id = ?', [id]);
+      console.log(`✅ Cliente eliminado definitivamente id=${id}`);
+
+    } else if (user.role === 'trabajador') {
+      console.log('🛠️ Solicitud de eliminación de trabajador');
+      // Contar tareas asociadas
+      const [[tareasPend]] = await db.execute('SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ? AND estado IN ("Pendiente","En Progreso")', [id]);
+      const [[tareasTot]] = await db.execute('SELECT COUNT(*) as count FROM tareas_mantenimiento WHERE trabajador_id = ?', [id]);
+      const hasAnyTasks = tareasTot.count > 0;
+      const hasPending = tareasPend.count > 0;
+
+      if (!hardRequested) {
+        if (hasPending) {
+          return res.status(400).json({
+            message: `No se puede desactivar (soft delete) porque tiene ${tareasPend.count} tareas pendientes/en progreso. Reasigna o completa primero.`,
+            pendingTasks: tareasPend.count
           });
         }
+        await db.execute('UPDATE usuarios SET activo = 0 WHERE id = ?', [id]);
+        await db.execute('UPDATE trabajadores_mantenimiento SET activo = 0 WHERE usuario_id = ?', [id]);
+        console.log(`🗂️ Soft delete aplicado a trabajador usuario_id=${id}`);
+        return res.json({
+          message: 'Trabajador desactivado (soft delete) - historial de tareas preservado',
+          softDeleted: true,
+          hardDeleteAvailable: !hasAnyTasks,
+          canHardDelete: !hasAnyTasks,
+          tasks: { total: tareasTot.count, pendientes: tareasPend.count },
+          warning: hasAnyTasks ? 'Tiene historial de tareas; hard delete lo borraría o dejaría tareas huérfanas.' : null
+        });
       }
-      
-      // Si llegamos aquí, el revendedor no tiene datos críticos, proceder con eliminación CASCADE
-      console.log('🗑️ Eliminando revendedor con CASCADE DELETE automático...');
-      eliminationResult = await query(`DELETE FROM usuarios WHERE id = ?`, [id]);
-      console.log(`✅ Usuario revendedor eliminado con CASCADE DELETE: ${id}`);
-      
+
+      // Hard delete trabajador: sólo si no tiene ninguna tarea (ni historial)
+      if (hardRequested && hasAnyTasks) {
+        return res.status(400).json({
+          message: 'Hard delete bloqueado: el trabajador tiene historial de tareas. Usa soft delete.',
+          tareas: tareasTot.count
+        });
+      }
+
+      console.log('🗑️ Hard delete autorizado para trabajador sin tareas');
+      eliminationResult = await query('DELETE FROM usuarios WHERE id = ?', [id]);
+      console.log(`✅ Trabajador eliminado definitivamente id=${id}`);
+
     } else {
       // Trabajadores, admins y otros roles - eliminación directa con CASCADE
       console.log('🗑️ Eliminando usuario con CASCADE DELETE automático...');
       
-      // Para trabajadores, limpiar tareas manualmente (temporal hasta configurar CASCADE)
-      if (user.role === 'trabajador') {
-        const tareasResult = await query(`DELETE FROM tareas_mantenimiento WHERE trabajador_id = ?`, [id]);
-        console.log(`✅ ${tareasResult.affectedRows} tareas del trabajador eliminadas`);
-      }
-      
+      // (Nota) Hard delete para roles no especificados; no hay soft delete especializado
+
       eliminationResult = await query(`DELETE FROM usuarios WHERE id = ?`, [id]);
       console.log(`✅ Usuario eliminado con CASCADE DELETE: ${id}`);
     }
 
-    if (eliminationResult.affectedRows === 0) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
+    if (eliminationResult) {
+      if (eliminationResult.affectedRows === 0) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+      console.log(`Usuario ${user.username} eliminado exitosamente`);
+      return res.json({ message: 'Usuario eliminado exitosamente', hardDeleted: true });
     }
-    
-    console.log(`Usuario ${user.username} eliminado exitosamente`);
-    res.json({ message: 'Usuario eliminado exitosamente' });
 
   } catch (error) {
     console.error('Error al eliminar usuario:', error);
@@ -1034,6 +1177,16 @@ router.patch('/:id/toggle-active', authenticateToken, requireRole(['admin']), as
         [newActiveState, id]
       );
       console.log(`✅ Estado actualizado en tabla trabajadores_mantenimiento para ${username}`);
+    }
+
+    // Actualizar estado en clientes si es usuario de tipo cliente
+    const [usuarioCliente] = await db.execute(
+      'SELECT cliente_id FROM usuarios WHERE id = ? AND COALESCE(role, tipo_usuario) = "cliente"',
+      [id]
+    );
+    if (usuarioCliente.length > 0 && usuarioCliente[0].cliente_id) {
+      await db.execute('UPDATE clientes SET activo = ? WHERE id = ?', [newActiveState, usuarioCliente[0].cliente_id]);
+      console.log(`✅ Estado actualizado en tabla clientes (id=${usuarioCliente[0].cliente_id}) para ${username}`);
     }
 
     const statusText = newActiveState === 1 ? 'ACTIVADO' : 'DESACTIVADO';

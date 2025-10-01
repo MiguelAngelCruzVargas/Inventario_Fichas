@@ -10,8 +10,8 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const precios = await query(`
-      SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio,
-             r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM precios p
       JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
       JOIN revendedores r ON p.revendedor_id = r.id
@@ -33,8 +33,8 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, requireRole(['admin', 'trabajador']), async (req, res) => {
   try {
     const precios = await query(`
-      SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio,
-             r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM precios p
       JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
       JOIN revendedores r ON p.revendedor_id = r.id
@@ -58,8 +58,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const precio = await query(`
-      SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio_base,
-             r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas, p.precio_venta as precio_base,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM precios p
       JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
       JOIN revendedores r ON p.revendedor_id = r.id
@@ -117,8 +117,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
       `, [precio, revendedor_id, tipo_ficha_id]);
 
       const precioActualizado = await query(`
-        SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-               r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+         COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
         FROM precios p
         JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
         JOIN revendedores r ON p.revendedor_id = r.id
@@ -136,8 +136,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
 
     // Obtener el precio creado
     const nuevoPrecio = await query(`
-      SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM precios p
       JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
       JOIN revendedores r ON p.revendedor_id = r.id
@@ -197,8 +197,8 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'trabajador']), asyn
 
     // Obtener el precio actualizado
     const precioActualizado = await query(`
-      SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre
+  SELECT p.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM precios p
       JOIN tipos_fichas tf ON p.tipo_ficha_id = tf.id
       JOIN revendedores r ON p.revendedor_id = r.id

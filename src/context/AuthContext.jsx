@@ -1,16 +1,32 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/authService';
-import { conditionalLog } from '../utils/errorHandler';
-import NavigationWarningModal from '../components/common/NavigationWarningModal';
+import { authService } from '@services/authService';
+import { conditionalLog } from '@utils/errorHandler';
+import NavigationWarningModal from '@components/common/NavigationWarningModal';
 
 const AuthContext = createContext();
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
+  if (context) return context;
+  // Fallback seguro cuando el provider no está disponible (evita crashes en desarrollo/HMR)
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.warn('useAuth llamado fuera de AuthProvider. Usando fallback no-op.');
   }
-  return context;
+  return {
+    user: null,
+    loading: false,
+    isAuthenticated: false,
+    sessionChanged: false,
+    sessionExpiring: false,
+    navigationModal: { isVisible: false, type: 'navigate', pendingAction: null },
+    login: async () => ({ success: false, error: 'Auth no inicializado' }),
+    logout: async () => {},
+    renewSession: async () => false,
+    dismissSessionChangeNotification: () => {},
+    confirmNavigation: () => {},
+    cancelNavigation: () => {},
+  };
 };
 
 export const AuthProvider = ({ children }) => {
@@ -256,13 +272,22 @@ export const AuthProvider = ({ children }) => {
       const response = await authService.login(credentials);
   if (import.meta.env.DEV) console.log('✅ Respuesta del login:', response);
       
-      // Setear el estado inmediatamente
-      setUser(response.user);
+      // Obtener usuario normalizado desde /auth/me (rol garantizado)
+      let normalizedUser = null;
+      try {
+        normalizedUser = await authService.getCurrentUser();
+      } catch (_) {
+        // Fallback suave si /auth/me falla momentáneamente
+        normalizedUser = response.user;
+      }
+
+      // Setear el estado con el usuario normalizado
+      setUser(normalizedUser);
       setIsAuthenticated(true);
       // Marcar que ya se hizo una verificación inicial después del login
       setInitialSessionCheck(true);
       
-  if (import.meta.env.DEV) console.log('👤 Usuario configurado:', response.user);
+  if (import.meta.env.DEV) console.log('👤 Usuario configurado:', normalizedUser);
   if (import.meta.env.DEV) console.log('🔑 Estado autenticado:', true);
       
       // Configurar monitoreo de sesión si hay información de expiración

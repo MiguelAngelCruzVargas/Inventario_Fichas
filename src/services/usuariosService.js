@@ -11,25 +11,30 @@ class UsuariosService {
     const maxRetries = 3;
     
     try {
-      const response = await apiClient.get('/usuarios');
-      return { success: true, data: response.data };
+      const response = await apiClient.get('/usuarios?includeInactive=0');
+      const payload = response.data;
+      const lista = Array.isArray(payload) ? payload : payload.usuarios;
+      return { success: true, data: lista };
     } catch (error) {
       console.error(`Error al obtener usuarios (intento ${retryCount + 1}):`, error);
-      
-      // Si es error de throttling y tenemos retries disponibles
-      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+      const status = error?.response?.status;
+      // Reintentos para 429 Too Many Requests
+      if (status === 429 && retryCount < maxRetries) {
         const delay = (retryCount + 1) * 500; // 500ms, 1000ms, 1500ms
-        console.log(`⏳ Reintentando en ${delay}ms...`);
-        
+        console.log(`⏳ 429 usuarios: reintentando en ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return this.obtenerUsuarios(retryCount + 1);
       }
-      
-      // Error final o no es throttling
-      const errorMessage = error.message?.includes('throttled') 
-        ? 'Sistema ocupado, reintentando automáticamente...'
+      // Reintentos legacy por mensaje 'throttled'
+      if (error.message?.includes('throttled') && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 500;
+        console.log(`⏳ throttled usuarios: reintentando en ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.obtenerUsuarios(retryCount + 1);
+      }
+      const errorMessage = (status === 429 || error.message?.includes('throttled'))
+        ? 'Demasiadas solicitudes; por favor espera un momento.'
         : error.response?.data?.message || 'Error al obtener usuarios';
-        
       return { success: false, error: errorMessage };
     }
   }
@@ -39,6 +44,14 @@ class UsuariosService {
     const maxRetries = 2;
     
     try {
+      // Normalizar cliente_id si role === 'cliente'
+      if (datosUsuario.role === 'cliente') {
+        if (!datosUsuario.cliente_id) {
+          return { success: false, error: 'Debe seleccionar un cliente asociado para el rol Cliente' };
+        }
+        // Asegurar tipo numérico para el backend
+        datosUsuario.cliente_id = Number(datosUsuario.cliente_id);
+      }
       const response = await apiClient.post('/usuarios', datosUsuario);
       return { success: true, data: response.data };
     } catch (error) {
@@ -67,6 +80,15 @@ class UsuariosService {
     const maxRetries = 2;
     
     try {
+      // Normalizar cliente_id si role === 'cliente' o si viene explicitamente
+      if (datosUsuario.role === 'cliente' || 'cliente_id' in datosUsuario) {
+        if (datosUsuario.role === 'cliente' && !datosUsuario.cliente_id) {
+          return { success: false, error: 'Debe seleccionar un cliente asociado para el rol Cliente' };
+        }
+        if (datosUsuario.cliente_id !== undefined && datosUsuario.cliente_id !== null && datosUsuario.cliente_id !== '') {
+          datosUsuario.cliente_id = Number(datosUsuario.cliente_id);
+        }
+      }
       const response = await apiClient.put(`/usuarios/${id}`, datosUsuario);
       return { success: true, data: response.data };
     } catch (error) {
@@ -276,7 +298,7 @@ class UsuariosService {
     if (!esEdicion && (!datos.password || datos.password.trim() === '')) {
       errores.push('La contraseña es requerida');
     }
-    if (!datos.role || !['admin', 'trabajador', 'revendedor'].includes(datos.role)) {
+  if (!datos.role || !['admin', 'trabajador', 'revendedor', 'cliente'].includes(datos.role)) {
       errores.push('Debe seleccionar un rol válido');
     }
     return errores;

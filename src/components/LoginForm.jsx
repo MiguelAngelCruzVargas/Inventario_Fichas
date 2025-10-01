@@ -1,13 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Wifi, 
   Eye, 
   EyeOff, 
   User, 
-  Shield, 
-  Wrench, 
-  Building2,
   Lock,
   ArrowRight,
   AlertCircle,
@@ -16,6 +13,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { conditionalLog } from '../utils/errorHandler';
 import CreateInitialAdmin from './common/CreateInitialAdmin';
+import brandingService from '@services/brandingService';
 
 const LoginForm = ({ onLogin }) => {
   const { login, loading, isAuthenticated } = useAuth();
@@ -25,17 +23,29 @@ const LoginForm = ({ onLogin }) => {
     password: ''
   });
   const [mostrarPassword, setMostrarPassword] = useState(false);
-  const [rolDetectado, setRolDetectado] = useState(null);
-  const [rolConfirmado, setRolConfirmado] = useState(false); // true solo si backend lo confirma
-
-  // Debug: Log cuando cambia el rolDetectado
-  useEffect(() => {
-    console.log('🔄 rolDetectado cambió a:', rolDetectado);
-  }, [rolDetectado]);
+  // Eliminado: detección de rol previa al login para evitar enumeración de usuarios/roles
   const [error, setError] = useState('');
   const [adminExists, setAdminExists] = useState(true);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
+  const [branding, setBranding] = useState({ name: 'Plaza Wifi', tagline: 'Sistema de Gestión v2.0', logoDataUrl: null });
+
+  useEffect(() => {
+    const loadBranding = async () => {
+      try {
+        const b = await brandingService.getBranding();
+        if (b) setBranding({
+          name: b.name || 'Plaza Wifi',
+          tagline: b.tagline || 'Sistema de Gestión v2.0',
+          logoDataUrl: b.logoDataUrl || null
+        });
+      } catch (_) { /* defaults */ }
+    };
+    loadBranding();
+    const onChanged = (e) => setBranding(prev => ({ ...prev, ...(e.detail || {}) }));
+    window.addEventListener('brandingChanged', onChanged);
+    return () => window.removeEventListener('brandingChanged', onChanged);
+  }, []);
 
   // Verificar si existe un administrador al cargar el componente
   useEffect(() => {
@@ -45,12 +55,17 @@ const LoginForm = ({ onLogin }) => {
   const checkAdminExists = async () => {
     try {
       const response = await fetch('/api/auth/admin-exists');
+      if (!response.ok) {
+        // Si el backend responde con error, asumir que existe para no bloquear el flujo
+        setAdminExists(true);
+        return;
+      }
       const data = await response.json();
-      setAdminExists(data.adminExists);
-      setCheckingAdmin(false);
+      setAdminExists(!!data?.adminExists);
     } catch (error) {
       console.error('Error verificando admin:', error);
       setAdminExists(true); // Asumir que existe si hay error
+    } finally {
       setCheckingAdmin(false);
     }
   };
@@ -62,50 +77,7 @@ const LoginForm = ({ onLogin }) => {
     // Opcional: auto-login o mostrar mensaje de éxito
   };
 
-  // Detectar rol basado en el usuario ingresado
-  useEffect(() => {
-    // Evitar detecciones cuando ya está autenticado para no disparar efectos innecesarios
-  if (isAuthenticated) return;
-
-    const detectRole = async () => {
-      const username = credentials.username.trim();
-      if (!username) {
-        setRolDetectado(null);
-        setRolConfirmado(false);
-        return;
-      }
-
-      // Detección básica rápida
-      const usernameLower = username.toLowerCase();
-      if (usernameLower === 'admin') {
-        setRolDetectado('admin');
-        setRolConfirmado(false); // heurístico hasta confirmar
-        return;
-      } else if (usernameLower === 'prueba') {
-        setRolDetectado('trabajador');
-        setRolConfirmado(false);
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/auth/detect-role?username=${encodeURIComponent(username)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setRolDetectado(data.tipo_usuario || null);
-          setRolConfirmado(true);
-        } else {
-          setRolDetectado(null);
-          setRolConfirmado(false);
-        }
-      } catch (error) {
-        setRolDetectado(null);
-        setRolConfirmado(false);
-      }
-    };
-
-    const timeoutId = setTimeout(detectRole, 500);
-    return () => clearTimeout(timeoutId);
-  }, [credentials.username, isAuthenticated]);
+  // Detección de rol deshabilitada por seguridad (evitar filtraciones pre-login)
 
   const handleInputChange = (field, value) => {
     setCredentials(prev => ({
@@ -140,27 +112,12 @@ const LoginForm = ({ onLogin }) => {
       navigate('/', { replace: true });
 
     } catch (error) {
-      // Solo log en desarrollo para debugging
-      conditionalLog.error('Error en login:', error);
-      
-      // Mostrar error amigable al usuario
+      // No saturar la consola: el servicio ya genera logs cuando corresponde
       setError(error.message || 'Error al iniciar sesión');
     }
   };
 
-  const config = useMemo(() => {
-    switch (rolDetectado) {
-      case 'admin':
-        return { icon: Shield, title: 'Panel de Administrador', description: 'Acceso completo al sistema' };
-      case 'revendedor':
-        return { icon: Building2, title: 'Portal del Revendedor', description: 'Gestiona tu inventario y ventas' };
-      case 'trabajador':
-        return { icon: Wrench, title: 'Panel del Técnico', description: 'Gestiona inventarios y entregas' };
-      default:
-        return { icon: Wifi, title: 'Sistema de Fichas Internet', description: 'Distribución y Control' };
-    }
-  }, [rolDetectado]);
-  const IconComponent = config.icon;
+  const IconComponent = Wifi;
 
 
 
@@ -202,14 +159,16 @@ const LoginForm = ({ onLogin }) => {
       <div className="relative z-10 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
           <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="w-6 h-6 sm:w-8 sm:h-8 bg-slate-600 rounded-lg flex items-center justify-center">
-              <Wifi className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 bg-slate-600 rounded-lg flex items-center justify-center overflow-hidden">
+              {branding.logoDataUrl ? (
+                <img src={branding.logoDataUrl} alt="logo" className="w-full h-full object-cover" />
+              ) : (
+                <Wifi className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              )}
             </div>
-            <span className="text-white font-semibold text-base sm:text-lg">Plaza Wifi</span>
+            <span className="text-white font-semibold text-base sm:text-lg">{branding.name}</span>
           </div>
-          <div className="text-slate-300 text-xs sm:text-sm">
-            Sistema de Gestión v2.0
-          </div>
+          <div className="text-slate-300 text-xs sm:text-sm">{branding.tagline}</div>
         </div>
       </div>
 
@@ -227,18 +186,11 @@ const LoginForm = ({ onLogin }) => {
               </div>
               
               <h1 className="text-xl sm:text-2xl font-bold text-slate-800 mb-2">
-                {config.title}
+                Iniciar sesión
               </h1>
               <p className="text-slate-600 text-sm">
-                {config.description}
+                Accede a tu cuenta para continuar
               </p>
-              
-        {rolDetectado && (
-                <div className="mt-4 inline-flex items-center px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                  <User className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-          {rolDetectado.charAt(0).toUpperCase() + rolDetectado.slice(1)} {rolConfirmado ? 'detectado' : 'posible'}
-                </div>
-              )}
             </div>
 
             {/* Formulario */}

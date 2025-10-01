@@ -2,7 +2,7 @@
  * Controlador para gestión de revendedores
  */
 
-import { validarRevendedor, validarPrecioComision, validarTelefono } from '../utils/validation.js';
+import { validarRevendedor, validarPrecioComision, validarTelefono } from '@utils/validation';
 
 /**
  * Base de datos simulada

@@ -6,8 +6,13 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-  "dev": "nodemon server.js",
-  "migrate:cortes-revendedor": "node ./scripts/apply_revendedor_cortes_migration.js"
+    "dev": "nodemon server.js",
+    "migrate:cortes-revendedor": "node ./scripts/apply_revendedor_cortes_migration.js",
+    "migrate:abonos-revendedores": "node ./scripts/apply_abonos_revendedores_migration.js",
+    "migrate:clientes-primer-corte": "node ./scripts/apply_fecha_primer_corte_migration.js",
+    "migrate:tareas-cliente-id": "node ./scripts/apply_cliente_id_tareas_migration.js",
+    "find:record": "node ./scripts/find_record.js",
+    "health": "node -e \"fetch('http://localhost:'+(process.env.PORT||3001)+'/health').then(r=>r.json()).then(j=>console.log(j)).catch(e=>{console.error(e);process.exit(1);})\""
   },
   "keywords": [
     "fichas",
@@ -17,18 +22,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
     "mysql2": "^3.6.5",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.33.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

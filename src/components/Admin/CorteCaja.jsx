@@ -1,7 +1,7 @@
 // CorteCaja.jsx - Versión Mejorada y Responsiva con Estilos de Tarjeta Actualizados
 import React, { useState, useEffect } from 'react';
-import { useFichas } from '../../context/FichasContext';
-import { useAuth } from '../../context/AuthContext';
+import { useFichas } from '@context/FichasContext';
+import { useAuth } from '@context/AuthContext';
 import { 
   DollarSign, 
   Calendar, 
@@ -23,7 +23,8 @@ import {
   RefreshCw,
   Info
 } from 'lucide-react';
-import { fichasService } from '../../services/fichasService';
+import { fichasService } from '@services/fichasService';
+import { cortesCajaService } from '@services/cortesCajaService';
 
 // --- FUNCIÓN DE FORMATO DE FECHA ---
 const formatearFechaSegura = (fecha, conHora = false) => {
@@ -145,10 +146,14 @@ const CorteCaja = () => {
   const [expandirDetalles, setExpandirDetalles] = useState(false);
   const [porcentajeAdmin, setPorcentajeAdmin] = useState(20); // % del creador/admin
   const [porcentajeRevendedor, setPorcentajeRevendedor] = useState(80);
+  const [montoRecibido, setMontoRecibido] = useState('');
+  const [notaAbonoInicial, setNotaAbonoInicial] = useState('');
+  const [marcarPagadoAhora, setMarcarPagadoAhora] = useState(false);
   
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '' });
+  const [abonoBusy, setAbonoBusy] = useState(false);
 
   useEffect(() => {
     if (modoVista === 'historial') {
@@ -160,16 +165,18 @@ const CorteCaja = () => {
     if (!searchTerm.trim()) return true;
     const termino = searchTerm.toLowerCase().trim();
     return (
+      (r.responsable || '').toLowerCase().includes(termino) ||
       (r.nombre || '').toLowerCase().includes(termino) ||
-      (r.responsable || '').toLowerCase().includes(termino)
+      (r.nombre_negocio || '').toLowerCase().includes(termino)
     );
   });
 
   useEffect(() => {
     if (revendedorSeleccionado) {
-      // Determinar porcentajes a usar: primero específico del revendedor, si no, configuración global
-      const pct = Number(revendedorSeleccionado.porcentaje_comision);
-      if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+      // Determinar porcentajes: usar global si revendedor tiene 0/null/""; solo override si > 0
+      const raw = revendedorSeleccionado.porcentaje_comision;
+      const pct = Number(raw);
+      if (Number.isFinite(pct) && pct > 0 && pct <= 100) {
         setPorcentajeAdmin(pct);
         setPorcentajeRevendedor(100 - pct);
       } else {
@@ -275,6 +282,19 @@ const CorteCaja = () => {
     };
   };
 
+  // Sincronizar monto recibido cuando el usuario marca "Marcar como pagado"
+  useEffect(() => {
+    const res = calcularResumen();
+    const totalAdmin = res?.totalGananciaCreador || 0;
+    if (marcarPagadoAhora) {
+      setMontoRecibido(String(Number(totalAdmin).toFixed(2)));
+    } else {
+      // Si el monto coincidía exactamente con el total, lo limpiamos al desmarcar
+      if (Number(montoRecibido) === Number(totalAdmin)) setMontoRecibido('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marcarPagadoAhora, ventasIngresadas, porcentajeAdmin]);
+
   const procesarCorte = async () => {
     try {
       const resumen = calcularResumen();
@@ -291,6 +311,11 @@ const CorteCaja = () => {
         })
         .filter(item => item.tipo_ficha_id); // Solo incluir los que tienen ID válido
       
+      const ownerName = revendedorSeleccionado?.responsable || revendedorSeleccionado?.nombre || '';
+      const storeName = revendedorSeleccionado?.nombre_negocio || '';
+      const displayObs = storeName && storeName.toLowerCase() !== ownerName.toLowerCase()
+        ? `Corte para ${ownerName} (${storeName})`
+        : `Corte para ${ownerName || storeName}`;
       const datosCorte = {
         fecha_corte: fechaCorte,
         usuario_id: user?.id,
@@ -301,7 +326,10 @@ const CorteCaja = () => {
         total_revendedores: resumen.totalGananciaRevendedor,
         detalle_tipos: resumen.resumenPorTipo.map(item => ({...item})),
         actualizaciones_inventario: actualizacionesInventario, // *** AGREGAR ESTO ***
-        observaciones: `Corte para ${revendedorSeleccionado.nombre_negocio || revendedorSeleccionado.nombre}`
+  observaciones: displayObs,
+  // Abono inicial opcional
+  monto_pagado_revendedor: Number(montoRecibido) || 0,
+  abono_nota_inicial: notaAbonoInicial || null
       };
       
       console.log('📦 Datos del corte a enviar:', {
@@ -344,9 +372,60 @@ const CorteCaja = () => {
     setVentasIngresadas({});
     setSearchTerm('');
     setErrores({});
+  setMontoRecibido('');
+  setNotaAbonoInicial('');
   };
 
   const handleInputTap = (e) => { e.preventDefault(); e.target.focus(); setTimeout(() => { if (e.target.value) e.target.select(); }, 100); };
+
+  const abonarCorte = async (corte) => {
+    try {
+      if (abonoBusy) return;
+      const montoStr = window.prompt('Monto a abonar (MXN):', '');
+      if (montoStr === null) return; // cancelado
+      const monto = Number(String(montoStr).replace(',', '.'));
+      if (!monto || monto <= 0) {
+        setAlertModal({ isOpen: true, title: 'Monto inválido', message: 'Ingresa un monto mayor a 0.' });
+        return;
+      }
+      const nota = window.prompt('Nota (opcional):', '') || undefined;
+      setAbonoBusy(true);
+      const res = await cortesCajaService.abonarCorte(corte.id, { monto, nota });
+      if (res?.success) {
+        await cargarHistorialCortes();
+        setSuccessModal({ isOpen: true, title: 'Abono registrado', message: `Se registró un abono por $${monto.toFixed(2)}.` });
+      } else {
+        setAlertModal({ isOpen: true, title: 'Error', message: res?.message || 'No se pudo registrar el abono.' });
+      }
+    } catch (e) {
+      setAlertModal({ isOpen: true, title: 'Error', message: e?.message || 'No se pudo registrar el abono.' });
+    } finally {
+      setAbonoBusy(false);
+    }
+  };
+
+  // Botón rápido para saldar un corte (abonar el saldo completo)
+  const saldarCorte = async (corte) => {
+    try {
+      if (abonoBusy) return;
+      const gananciasCreador = corte.total_ganancias ?? 0;
+      const pagado = Number(corte.monto_pagado_revendedor || 0);
+      const saldo = Math.max(0, Number((gananciasCreador - pagado).toFixed(2)));
+      if (saldo <= 0) return;
+      setAbonoBusy(true);
+      const res = await cortesCajaService.abonarCorte(corte.id, { monto: saldo, nota: 'Saldar corte completo' });
+      if (res?.success) {
+        await cargarHistorialCortes();
+        setSuccessModal({ isOpen: true, title: 'Corte saldado', message: 'Se registró el pago del saldo pendiente.' });
+      } else {
+        setAlertModal({ isOpen: true, title: 'Error', message: res?.message || 'No se pudo saldar el corte.' });
+      }
+    } catch (e) {
+      setAlertModal({ isOpen: true, title: 'Error', message: e?.message || 'No se pudo saldar el corte.' });
+    } finally {
+      setAbonoBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -402,10 +481,21 @@ const CorteCaja = () => {
                     <Building2 className="w-7 h-7 text-slate-500 group-hover:text-white transition-colors duration-300" />
                   </div>
 
-                  {/* Nombre y Responsable */}
+                  {/* Nombre de persona (arriba) y nombre de tienda (abajo si existe) */}
                   <div className="flex-1 min-w-0 w-full mb-3">
-                    <h4 className="font-bold text-base text-gray-800 truncate w-full" title={revendedor.nombre}>{revendedor.nombre}</h4>
-                    <p className="text-sm text-gray-500 truncate w-full" title={revendedor.responsable}>{revendedor.responsable}</p>
+                    {(() => {
+                      const owner = revendedor.responsable || revendedor.nombre || '—';
+                      const store = revendedor.nombre_negocio || '';
+                      const same = store && owner && store.toLowerCase() === owner.toLowerCase();
+                      return (
+                        <>
+                          <h4 className="font-bold text-base text-gray-800 truncate w-full" title={owner}>{owner}</h4>
+                          {!same && !!store && (
+                            <p className="text-sm text-gray-500 truncate w-full" title={store}>{store}</p>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Footer con Fichas e ID */}
@@ -448,6 +538,8 @@ const CorteCaja = () => {
               const gananciasCreador = corte.total_ganancias ?? 0;
               const gananciasRevendedor = corte.total_revendedores ?? 0;
               const nombreRevendedor = corte.observaciones?.replace('Corte realizado para ', '') || 'N/A';
+              const saldo = (typeof corte.saldo_revendedor === 'number') ? corte.saldo_revendedor : Math.max(0, (gananciasCreador || 0) - (corte.monto_pagado_revendedor || 0));
+              const estado = corte.estado_cobro || (saldo > 0 ? ((corte.monto_pagado_revendedor||0)>0?'parcial':'pendiente') : 'saldado');
               return (
                 <div key={corte.id || index} className="border border-gray-200 rounded-xl p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -455,13 +547,49 @@ const CorteCaja = () => {
                       <FileText className="w-6 h-6 text-slate-500 flex-shrink-0" />
                       <div className="min-w-0">
                         <p className="font-bold text-gray-900 truncate">{nombreRevendedor}</p>
-                        <p className="text-sm text-gray-500">{formatearFechaSegura(corte.fecha_corte || corte.created_at, true)}</p>
+                        <p className="text-sm text-gray-500">{
+                          (() => {
+                            // Mostrar siempre la fecha base (fecha_corte) pero la hora real de creación
+                            const fechaBase = corte.fecha_corte || corte.created_at;
+                            const horaReal = corte.created_at;
+                            try {
+                              const dFecha = new Date(fechaBase);
+                              const dHora = new Date(horaReal);
+                              if (!isNaN(dFecha) && !isNaN(dHora)) {
+                                const fechaStr = dFecha.toLocaleDateString('es-MX', { dateStyle: 'medium' });
+                                const horaStr = dHora.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                                return `${fechaStr} • ${horaStr}`;
+                              }
+                            } catch {}
+                            return formatearFechaSegura(corte.created_at, true);
+                          })()
+                        }</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-x-4 gap-y-2 flex-wrap flex-shrink-0">
                       <div className="text-right"><p className="text-xs text-gray-500">Vendido</p><p className="font-semibold text-gray-900">${totalVendido.toLocaleString('es-MX')}</p></div>
                       <div className="text-right"><p className="text-xs text-emerald-600">Mi Ganancia</p><p className="font-semibold text-emerald-600">${gananciasCreador.toLocaleString('es-MX')}</p></div>
                       <div className="text-right"><p className="text-xs text-amber-600">P/ Revendedor</p><p className="font-semibold text-amber-600">${gananciasRevendedor.toLocaleString('es-MX')}</p></div>
+                      <div className="text-right">
+                        <p className={`text-xs ${estado==='saldado'?'text-emerald-700':estado==='parcial'?'text-amber-700':'text-red-700'}`}>Estado</p>
+                        <p className={`font-semibold ${estado==='saldado'?'text-emerald-700':estado==='parcial'?'text-amber-700':'text-red-700'}`}>{String(estado).toUpperCase()}</p>
+                        {estado!=='saldado' && <p className="text-xs text-gray-500">Saldo ${Number(saldo||0).toLocaleString('es-MX')}</p>}
+                      </div>
+                      {estado!=='saldado' && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => abonarCorte(corte)}
+                            className="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-xs hover:bg-amber-200 disabled:opacity-50"
+                            disabled={abonoBusy}
+                          >{abonoBusy? 'Guardando...' : 'Abonar'}</button>
+                          <button
+                            onClick={() => saldarCorte(corte)}
+                            className="px-3 py-1.5 bg-emerald-100 text-emerald-800 rounded-lg text-xs hover:bg-emerald-200 disabled:opacity-50"
+                            disabled={abonoBusy}
+                            title="Registrar el pago del saldo completo"
+                          >Saldar</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {corte.detalle_tipos?.filter(t => t.vendidas > 0).length > 0 && (
@@ -502,7 +630,7 @@ const CorteCaja = () => {
                         <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center space-x-4">
                                 <button onClick={reiniciar} className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors flex-shrink-0"><ArrowLeft className="w-5 h-5 text-gray-600" /></button>
-                                <div><h2 className="text-xl font-bold text-gray-900">Realizando Corte</h2><p className="text-gray-500 truncate">{revendedorSeleccionado?.nombre}</p></div>
+                                <div><h2 className="text-xl font-bold text-gray-900">Realizando Corte</h2><p className="text-gray-500 truncate">{(revendedorSeleccionado?.responsable || revendedorSeleccionado?.nombre) + (revendedorSeleccionado?.nombre_negocio && (revendedorSeleccionado?.nombre_negocio?.toLowerCase() !== (revendedorSeleccionado?.responsable || revendedorSeleccionado?.nombre || '').toLowerCase()) ? ` — ${revendedorSeleccionado?.nombre_negocio}` : '')}</p></div>
                             </div>
                             <button onClick={() => setExpandirDetalles(!expandirDetalles)} className="flex items-center space-x-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm flex-shrink-0"><Eye className="w-4 h-4" /><span className="hidden sm:inline">Detalles</span>{expandirDetalles ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                         </div>
@@ -510,10 +638,10 @@ const CorteCaja = () => {
 
                     {expandirDetalles && (
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 animate-in fade-in-50">
-                            <h3 className="font-bold text-gray-900 mb-4">Información del Revendedor</h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                                <div className="flex items-center gap-3"><Building2 className="w-5 h-5 text-gray-400"/><div className="min-w-0"><p className="text-xs text-gray-500">Negocio</p><p className="font-medium truncate">{revendedorSeleccionado?.nombre}</p></div></div>
-                                <div className="flex items-center gap-3"><User className="w-5 h-5 text-gray-400"/><div className="min-w-0"><p className="text-xs text-gray-500">Responsable</p><p className="font-medium truncate">{revendedorSeleccionado?.responsable}</p></div></div>
+              <h3 className="font-bold text-gray-900 mb-4">Información del Revendedor</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                <div className="flex items-center gap-3"><User className="w-5 h-5 text-gray-400"/><div className="min-w-0"><p className="text-xs text-gray-500">Persona</p><p className="font-medium truncate">{revendedorSeleccionado?.responsable || revendedorSeleccionado?.nombre || '—'}</p></div></div>
+                <div className="flex items-center gap-3"><Building2 className="w-5 h-5 text-gray-400"/><div className="min-w-0"><p className="text-xs text-gray-500">Negocio</p><p className="font-medium truncate">{revendedorSeleccionado?.nombre_negocio || '—'}</p></div></div>
                                 <div className="flex items-center gap-3"><Phone className="w-5 h-5 text-gray-400"/><div className="min-w-0"><p className="text-xs text-gray-500">Teléfono</p><p className="font-medium truncate">{revendedorSeleccionado?.telefono}</p></div></div>
                             </div>
                         </div>
@@ -546,6 +674,35 @@ const CorteCaja = () => {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Monto recibido del revendedor (opcional)</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={montoRecibido}
+                              onChange={(e)=>{ const v=e.target.value; if (v===''||/^\d*(?:[\.,]\d{0,2})?$/.test(v)) setMontoRecibido(v.replace(',', '.')); }}
+                              className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${marcarPagadoAhora ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              placeholder="0.00"
+                              disabled={marcarPagadoAhora}
+                            />
+                            <div className="flex items-center gap-2 mt-2">
+                              <input id="chkPagado" type="checkbox" className="w-4 h-4" checked={marcarPagadoAhora} onChange={(e)=>setMarcarPagadoAhora(e.target.checked)} />
+                              <label htmlFor="chkPagado" className="text-sm text-gray-700">Marcar como pagado (recibí todo)</label>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Se registrará como abono inicial del corte.</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Nota del abono (opcional)</label>
+                            <input
+                              type="text"
+                              value={notaAbonoInicial}
+                              onChange={(e)=>setNotaAbonoInicial(e.target.value)}
+                              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              placeholder="Ej. Transferencia parcial"
+                            />
+                          </div>
                         </div>
                     </div>
                 </div>

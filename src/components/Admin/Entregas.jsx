@@ -1,7 +1,6 @@
 // Entregas.jsx - Gestión de Revendedores (Versión con Diseño Restaurado y Funcionalidad Mejorada)
 import React, { useState, useEffect } from 'react';
 import {
-    Package,
     Users,
     Building2,
     Phone,
@@ -17,9 +16,9 @@ import {
     Trash2,
     Search
 } from 'lucide-react';
-import { useFichas } from '../../context/FichasContext';
-import { useUsers } from '../../context/UsersContext';
-import { fichasService } from '../../services/fichasService';
+import { useFichas } from '@context/FichasContext';
+import { useUsers } from '@context/UsersContext';
+import { fichasService } from '@services/fichasService';
 
 // --- Componentes de UI Modulares ---
 
@@ -52,12 +51,12 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => (
                 <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
             </div>
             <p className="text-gray-700 mb-6 whitespace-pre-line">{message}</p>
-            <div className="flex gap-3">
-                <button onClick={onConfirm} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center">
+            <div className="flex flex-col sm:flex-row gap-3">
+                <button onClick={onConfirm} className="w-full sm:flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Eliminar
                 </button>
-                <button onClick={onCancel} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center">
+                <button onClick={onCancel} className="w-full sm:flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center">
                     <X className="w-4 h-4 mr-2" />
                     Cancelar
                 </button>
@@ -111,7 +110,7 @@ const ResumenFinanciero = ({ resumen }) => {
                                     <span className="font-semibold text-blue-800">${(resumen.totalSubtotal || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-gray-700">Mi ganancia ({resumen.porcentajeGananciaCreador || 20}%):</span>
+                                    <span className="text-gray-700">Mi ganancia ({resumen.porcentajeGananciaCreador ?? 20}%):</span>
                                     <span className="font-semibold text-orange-800">${(resumen.totalGananciaCreador || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between text-base pt-2 border-t">
@@ -136,9 +135,19 @@ const RevendedorCard = ({
     onUpdateVendidas,
     calcularResumenFinanciero,
     ajustarInventarioExcel,
+    porcentajeGlobal
 }) => {
     const [tempVendidas, setTempVendidas] = useState({});
-    const resumen = calcularResumenFinanciero(revendedor);
+        const resumen = calcularResumenFinanciero(revendedor);
+        // Normalizar porcentaje: 0/null/"" => usar global; solo override si > 0
+        const pctRaw = revendedor.porcentaje_comision;
+        let pctParsed = Number.isFinite(Number(pctRaw)) ? Number(pctRaw) : NaN;
+        const pctNum = (!Number.isNaN(pctParsed) && pctParsed > 0) ? pctParsed : null;
+        const globalNum = (porcentajeGlobal !== null && porcentajeGlobal !== undefined && `${porcentajeGlobal}`.trim() !== '' && !Number.isNaN(parseFloat(porcentajeGlobal)))
+            ? parseFloat(porcentajeGlobal)
+            : null;
+        const pctEfectivo = (pctNum !== null ? pctNum : (globalNum !== null ? globalNum : 20));
+        const usaGlobal = (pctNum === null);
 
     const handleVendidasChange = (tipoId, value) => {
         if (value === '' || /^\d+$/.test(value)) {
@@ -167,18 +176,31 @@ const RevendedorCard = ({
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900 flex items-center text-lg">
-                        <Building2 className="w-5 h-5 mr-3 text-gray-500" />
-                        {revendedor.nombre_negocio || revendedor.nombre}
-                    </h4>
+                    {(() => {
+                        const persona = revendedor.responsable || revendedor.nombre || revendedor.nombre_negocio || '—';
+                        const tienda = revendedor.nombre_negocio && revendedor.nombre_negocio !== persona ? revendedor.nombre_negocio : '';
+                        return (
+                            <div>
+                                <h4 className="font-semibold text-gray-900 flex items-center text-lg">
+                                    <User className="w-5 h-5 mr-3 text-gray-500" />
+                                    {persona}
+                                </h4>
+                                {tienda && (
+                                    <div className="pl-8 mt-1 text-sm text-gray-600 flex items-center">
+                                        <Building2 className="w-4 h-4 mr-2 text-gray-400" />
+                                        {tienda}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                     <div className="mt-2 space-y-1 pl-8">
-                        <p className="text-sm text-gray-600 flex items-center"><User className="w-4 h-4 mr-2 text-gray-400" />{revendedor.responsable}</p>
                         <p className="text-sm text-gray-600 flex items-center"><Phone className="w-4 h-4 mr-2 text-gray-400" />{revendedor.telefono}</p>
                         {revendedor.direccion && <p className="text-sm text-gray-600 flex items-center"><MapPin className="w-4 h-4 mr-2 text-gray-400" />{revendedor.direccion}</p>}
                         <div className="flex items-center space-x-2 pt-1">
                             <p className="text-sm text-gray-600 flex items-center">
                                 <Calculator className="w-4 h-4 mr-2 text-gray-400" />
-                                Comisión: {revendedor.porcentaje_comision || 20.0}%
+                                Comisión: {pctEfectivo.toFixed(2)}%{usaGlobal ? ' (global)' : ''}
                             </p>
                             <button onClick={() => onEditComision(revendedor)} className="text-blue-600 hover:text-blue-700 text-xs font-semibold px-2 py-1 rounded hover:bg-blue-50 transition-colors">Editar</button>
                         </div>
@@ -238,7 +260,7 @@ const RevendedorCard = ({
                                 </button>
                             )}
 
-                            <div className="flex justify-center space-x-2 border-t pt-3 mt-2">
+                            <div className="flex flex-wrap justify-center gap-2 border-t pt-3 mt-2">
                                 <button onClick={() => ajustarInventarioExcel(revendedor.id, tipo.nombre, 'entregadas', 1)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded text-sm transition-colors" title="Agregar entregada">+Entregada</button>
                                 <button onClick={() => ajustarInventarioExcel(revendedor.id, tipo.nombre, 'vendidas', 1)} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded text-sm transition-colors" title="Agregar vendida">+Vendida</button>
                                 <button onClick={() => ajustarInventarioExcel(revendedor.id, tipo.nombre, 'vendidas', -1)} className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-sm transition-colors" title="Restar vendida">-Vendida</button>
@@ -300,34 +322,45 @@ const ModalEdicionPrecios = ({ isOpen, onClose, onSave, tiposFicha, revendedorId
                         </div>
                     ))}
                 </div>
-                <div className="flex gap-3 pt-6 mt-6 border-t">
-                    <button onClick={handleSave} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center"><Check className="w-5 h-5 mr-2" />Guardar</button>
-                    <button onClick={onClose} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center"><X className="w-5 h-5 mr-2" />Cancelar</button>
+                <div className="flex flex-col sm:flex-row gap-3 pt-6 mt-6 border-t">
+                    <button onClick={handleSave} className="w-full sm:flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center"><Check className="w-5 h-5 mr-2" />Guardar</button>
+                    <button onClick={onClose} className="w-full sm:flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-xl font-medium transition-colors flex items-center justify-center"><X className="w-5 h-5 mr-2" />Cancelar</button>
                 </div>
             </div>
         </div>
     );
 };
 
-const ModalPorcentajeComision = ({ isOpen, onClose, revendedor, onSave }) => {
+const ModalPorcentajeComision = ({ isOpen, onClose, revendedor, onSave, porcentajeGlobal }) => {
     const [porcentaje, setPorcentaje] = useState(20.0);
+    const [usarGlobal, setUsarGlobal] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (revendedor) {
-            setPorcentaje(revendedor.porcentaje_comision || 20.0);
+            // Por defecto, marcar "usar global"; si tiene personalizado > 0, se mostrará ese valor
+            const num = Number(revendedor.porcentaje_comision);
+            setUsarGlobal(true);
+            if (Number.isFinite(num) && num > 0) {
+                setPorcentaje(num);
+            } else {
+                const globalNum = Number(porcentajeGlobal);
+                setPorcentaje(Number.isFinite(globalNum) ? globalNum : 20.0);
+            }
         }
     }, [revendedor]);
 
     if (!isOpen) return null;
 
     const handleSave = async () => {
-        if (porcentaje < 0 || porcentaje > 100) {
-            alert('El porcentaje debe estar entre 0 y 100');
-            return;
+        if (!usarGlobal) {
+            if (porcentaje < 0 || porcentaje > 100) {
+                alert('El porcentaje debe estar entre 0 y 100');
+                return;
+            }
         }
         setLoading(true);
-        await onSave(revendedor.id, parseFloat(porcentaje));
+        await onSave(revendedor.id, usarGlobal ? null : parseFloat(porcentaje));
         setLoading(false);
         onClose();
     };
@@ -346,13 +379,26 @@ const ModalPorcentajeComision = ({ isOpen, onClose, revendedor, onSave }) => {
                     <h3 className="text-lg font-semibold text-gray-900">Configurar Comisión</h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600" disabled={loading}><X className="w-5 h-5" /></button>
                 </div>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Revendedor</label>
-                        <div className="text-gray-900 font-medium">{revendedor?.nombre_negocio || revendedor?.nombre}</div>
-                    </div>
+                                <div className="space-y-4">
+                                        <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Revendedor</label>
+                                                {(() => {
+                                                    const persona = revendedor?.responsable || revendedor?.nombre || revendedor?.nombre_negocio || '—';
+                                                    const tienda = revendedor?.nombre_negocio && revendedor?.nombre_negocio !== persona ? revendedor?.nombre_negocio : '';
+                                                    return (
+                                                        <div className="text-gray-900 font-medium">
+                                                            {persona}
+                                                            {tienda && <div className="text-sm text-gray-500">{tienda}</div>}
+                                                        </div>
+                                                    );
+                                                })()}
+                                        </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Porcentaje de Mi Ganancia (%)</label>
+                        <div className="flex items-center gap-3 mb-2">
+                            <input id="usarGlobalPct" type="checkbox" checked={usarGlobal} onChange={(e) => setUsarGlobal(e.target.checked)} disabled={loading} />
+                            <label htmlFor="usarGlobalPct" className="text-sm text-gray-700">Usar porcentaje global</label>
+                        </div>
                         <input
                             type="number" min="0" max="100" step="0.01"
                             inputMode="decimal"
@@ -361,13 +407,13 @@ const ModalPorcentajeComision = ({ isOpen, onClose, revendedor, onSave }) => {
                             className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             style={{ MozAppearance: 'textfield' }}
                             placeholder="Ej: 20.00"
-                            disabled={loading}
+                            disabled={loading || usarGlobal}
                         />
                     </div>
                 </div>
-                <div className="flex space-x-3 mt-6">
-                    <button onClick={onClose} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 px-4 rounded-lg font-medium transition-colors" disabled={loading}>Cancelar</button>
-                    <button onClick={handleSave} disabled={loading || porcentaje < 0 || porcentaje > 100} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-3 px-4 rounded-lg font-medium transition-colors">{loading ? 'Guardando...' : 'Guardar'}</button>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                    <button onClick={onClose} className="w-full sm:flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 px-4 rounded-lg font-medium transition-colors" disabled={loading}>Cancelar</button>
+                    <button onClick={handleSave} disabled={loading || (!usarGlobal && (porcentaje < 0 || porcentaje > 100))} className="w-full sm:flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-3 px-4 rounded-lg font-medium transition-colors">{loading ? 'Guardando...' : 'Guardar'}</button>
                 </div>
             </div>
         </div>
@@ -386,6 +432,47 @@ const Entregas = () => {
     const [modalEdicionPrecios, setModalEdicionPrecios] = useState({ isOpen: false, revendedorId: null });
     const [modalComision, setModalComision] = useState({ isOpen: false, revendedor: null });
     const [filtroRevendedores, setFiltroRevendedores] = useState('');
+    const [porcentajeGlobal, setPorcentajeGlobal] = useState(20);
+
+    // Cargar porcentaje global configurado (fallback cuando revendedor no tiene override)
+    useEffect(() => {
+        let isMounted = true;
+
+        const cargarPorcentajeGlobal = async () => {
+            try {
+                const conf = await fichasService.obtenerConfiguracionClave('porcentaje_ganancia_creador');
+                const val = conf?.valor != null ? parseFloat(conf.valor) : NaN;
+                if (isMounted && !Number.isNaN(val)) setPorcentajeGlobal(val);
+            } catch (_) {
+                // Mantener 20 por defecto si no existe o falla
+            }
+        };
+
+        // Inicial
+        cargarPorcentajeGlobal();
+
+        // Refrescar cuando cambie la configuración global en otra pantalla
+        const onConfigChanged = (ev) => {
+            if (ev?.detail?.clave === 'porcentaje_ganancia_creador') {
+                const raw = ev.detail.valor;
+                const val = raw != null && `${raw}`.trim() !== '' && !Number.isNaN(parseFloat(raw))
+                    ? parseFloat(raw)
+                    : null;
+                if (val !== null) setPorcentajeGlobal(val);
+            }
+        };
+        window.addEventListener('configChanged', onConfigChanged);
+
+        // También actualizar al recuperar el foco (por si la edición fue en otra pestaña)
+        const onFocus = () => cargarPorcentajeGlobal();
+        window.addEventListener('focus', onFocus);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('configChanged', onConfigChanged);
+            window.removeEventListener('focus', onFocus);
+        };
+    }, []);
 
     const mostrarNotificacion = (mensaje, tipo = 'success') => {
         setModalNotificacion({ mensaje, tipo });
@@ -395,17 +482,24 @@ const Entregas = () => {
         if (!filtroRevendedores.trim()) return true;
         const filtro = filtroRevendedores.toLowerCase();
         return (
-            (revendedor.nombre_negocio || revendedor.nombre || '').toLowerCase().includes(filtro) ||
+            (revendedor.responsable || revendedor.nombre || revendedor.nombre_negocio || '').toLowerCase().includes(filtro) ||
             (revendedor.responsable || '').toLowerCase().includes(filtro) ||
             (revendedor.telefono || '').toLowerCase().includes(filtro) ||
             (revendedor.direccion || '').toLowerCase().includes(filtro)
         );
     });
 
-    const calcularResumenFinancieroLocal = (revendedor) => {
+        const calcularResumenFinancieroLocal = (revendedor) => {
         if (!revendedor || !tiposFicha) return { tieneInventario: false };
 
-        const PORCENTAJE_GANANCIA_CREADOR = revendedor.porcentaje_comision || 20;
+                // Normalizar porcentaje: 0/null/"" => usar global; solo override si > 0
+                const pctRaw = revendedor.porcentaje_comision;
+                const numRaw = Number(pctRaw);
+                const pctNum = (Number.isFinite(numRaw) && numRaw > 0) ? numRaw : null;
+                const globalNum = (porcentajeGlobal !== null && porcentajeGlobal !== undefined && `${porcentajeGlobal}`.trim() !== '' && !Number.isNaN(parseFloat(porcentajeGlobal)))
+                    ? parseFloat(porcentajeGlobal)
+                    : null;
+                const PORCENTAJE_GANANCIA_CREADOR = (pctNum !== null ? pctNum : (globalNum !== null ? globalNum : 20));
         let totalSubtotal = 0;
         let totalFichasEntregadas = 0;
         let totalFichasVendidas = 0;
@@ -423,7 +517,7 @@ const Entregas = () => {
         const totalGananciaCreador = totalSubtotal * (PORCENTAJE_GANANCIA_CREADOR / 100);
         const totalGananciaRevendedor = totalSubtotal - totalGananciaCreador;
 
-        return {
+    return {
             totalFichasEntregadas,
             totalFichasVendidas,
             totalFichasExistentes: totalFichasEntregadas - totalFichasVendidas,
@@ -434,6 +528,7 @@ const Entregas = () => {
             tieneInventario: (revendedor.inventarios || []).length > 0
         };
     };
+
 
     const handleUpdateVendidas = async (revendedorId, tipoFichaId, nuevasVendidas) => {
         try {
@@ -446,13 +541,13 @@ const Entregas = () => {
         }
     };
     
+    // Ajustes rápidos tipo Excel
     const ajustarInventarioExcel = async (revendedorId, tipoFichaNombre, campo, cantidad) => {
         try {
             const tipoFichaObj = tiposFicha.find(tipo => tipo.nombre === tipoFichaNombre);
             if (!tipoFichaObj) throw new Error('Tipo de ficha no encontrado');
-            
             await fichasService.ajustarInventarioExcel(revendedorId, tipoFichaObj.id, campo, cantidad);
-            mostrarNotificacion(`Inventario actualizado: ${campo} ${cantidad > 0 ? '+' : ''}${cantidad}`, 'success');
+            mostrarNotificacion('Inventario ajustado', 'success');
             await loadAllData();
         } catch (error) {
             console.error('Error al ajustar inventario:', error);
@@ -460,14 +555,21 @@ const Entregas = () => {
         }
     };
 
-    const handleSavePrecios = async (revendedorId, nuevosPrecios) => {
+    // Guardar precios de un revendedor (desde el modal)
+    const handleSavePrecios = async (revendedorId, nuevosPreciosPorId) => {
         try {
-            const preciosParaActualizar = Object.entries(nuevosPrecios).map(([tipo_ficha_id, precio]) => ({
-                tipo_ficha_id: parseInt(tipo_ficha_id),
-                precio: parseFloat(precio)
-            }));
+            // Mapear { tipoId: precio } -> { keyFromNombre: precio }
+            const preciosMap = {};
+            for (const [idStr, precioVal] of Object.entries(nuevosPreciosPorId || {})) {
+                const id = parseInt(idStr, 10);
+                const tf = (tiposFicha || []).find(t => t.id === id);
+                if (!tf) continue;
+                const keyFromNombre = tf.nombre?.replace(/\s+/g, '').replace('horas', 'h').replace('hora', 'h');
+                const precio = parseFloat(precioVal);
+                if (!Number.isNaN(precio) && precio > 0) preciosMap[keyFromNombre] = precio;
+            }
 
-            await fichasService.actualizarPreciosRevendedor(revendedorId, preciosParaActualizar);
+            await fichasService.actualizarPreciosRevendedor(revendedorId, preciosMap);
             setModalEdicionPrecios({ isOpen: false, revendedorId: null });
             mostrarNotificacion('Precios actualizados exitosamente');
             await loadAllData();
@@ -507,7 +609,7 @@ const Entregas = () => {
 
     return (
         <div className="bg-gray-50 min-h-screen">
-            <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+            <div className="w-full max-w-none mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4 space-y-5">
                 <div className="flex items-center space-x-4">
                     <div className="w-14 h-14 bg-white border border-gray-200 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"><Users className="w-7 h-7 text-blue-600" /></div>
                     <div>
@@ -540,11 +642,21 @@ const Entregas = () => {
                                         revendedor={revendedor}
                                         tiposFicha={tiposFicha}
                                         onEditPrecios={(id) => setModalEdicionPrecios({ isOpen: true, revendedorId: id })}
-                                        onDelete={(r) => setModalConfirmacion({ title: 'Eliminar Revendedor', message: `¿Seguro que quieres eliminar a "${r.nombre_negocio || r.nombre}"? Esta acción no se puede deshacer.`, onConfirm: () => handleDeleteRevendedor(r.id), onCancel: () => setModalConfirmacion(null) })}
+                                                                                onDelete={(r) => setModalConfirmacion({
+                                                                                        title: 'Eliminar Revendedor',
+                                                                                        message: (() => {
+                                                                                            const persona = r.responsable || r.nombre || r.nombre_negocio || '—';
+                                                                                            const tienda = r.nombre_negocio && r.nombre_negocio !== persona ? ` (${r.nombre_negocio})` : '';
+                                                                                            return `¿Seguro que quieres eliminar a "${persona}${tienda}"? Esta acción no se puede deshacer.`;
+                                                                                        })(),
+                                                                                        onConfirm: () => handleDeleteRevendedor(r.id),
+                                                                                        onCancel: () => setModalConfirmacion(null)
+                                                                                })}
                                         onEditComision={(r) => setModalComision({ isOpen: true, revendedor: r })}
                                         onUpdateVendidas={handleUpdateVendidas}
                                         calcularResumenFinanciero={calcularResumenFinancieroLocal}
                                         ajustarInventarioExcel={ajustarInventarioExcel}
+                                        porcentajeGlobal={porcentajeGlobal}
                                     />
                                 ))}
                             </div>
@@ -562,7 +674,7 @@ const Entregas = () => {
             {modalNotificacion && <NotificationPopup message={modalNotificacion.mensaje} type={modalNotificacion.tipo} onClose={() => setModalNotificacion(null)} />}
             {modalConfirmacion && <ConfirmationModal {...modalConfirmacion} />}
             <ModalEdicionPrecios isOpen={modalEdicionPrecios.isOpen} onClose={() => setModalEdicionPrecios({ isOpen: false, revendedorId: null })} onSave={handleSavePrecios} tiposFicha={tiposFicha} revendedorId={modalEdicionPrecios.revendedorId} />
-            <ModalPorcentajeComision isOpen={modalComision.isOpen} onClose={() => setModalComision({ isOpen: false, revendedor: null })} onSave={handleSaveComision} revendedor={modalComision.revendedor} />
+            <ModalPorcentajeComision isOpen={modalComision.isOpen} onClose={() => setModalComision({ isOpen: false, revendedor: null })} onSave={handleSaveComision} revendedor={modalComision.revendedor} porcentajeGlobal={porcentajeGlobal} />
         </div>
     );
 };

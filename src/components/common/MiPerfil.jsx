@@ -11,8 +11,8 @@ import {
   Key,
   Edit3
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
-import usuariosService from '../../services/usuariosService';
+import { useAuth } from '@context/AuthContext';
+import usuariosService from '@services/usuariosService';
 
 const MiPerfil = ({ isOpen, onClose }) => {
   const { user } = useAuth();

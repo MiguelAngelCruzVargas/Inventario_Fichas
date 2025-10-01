@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 07-08-2025 a las 22:57:20
+-- Tiempo de generación: 22-08-2025 a las 05:55:46
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -44,8 +44,9 @@ CREATE TABLE `abastecimientos` (
 --
 
 INSERT INTO `abastecimientos` (`id`, `tipo_ficha_id`, `cantidad`, `proveedor`, `numero_factura`, `costo_total`, `observaciones`, `usuario_id`, `fecha_abastecimiento`) VALUES
-(1, 29, 200, 'Stock Manual', NULL, 1000.00, 'Stock agregado manualmente', 1, '2025-08-02 06:02:27'),
-(2, 29, 50, 'Stock Manual', NULL, 250.00, 'Stock agregado manualmente', 1, '2025-08-02 06:17:01');
+(1, 1, 100, 'Stock Manual', NULL, 500.00, 'Stock agregado manualmente', 1, '2025-08-09 03:01:01'),
+(2, 3, 50, 'Stock Manual', NULL, 1250.00, 'Stock agregado manualmente', 1, '2025-08-09 03:14:48'),
+(3, 4, 98, 'Stock Manual', NULL, 1274.00, 'Stock agregado manualmente', 1, '2025-08-09 15:11:10');
 
 -- --------------------------------------------------------
 
@@ -61,6 +62,54 @@ CREATE TABLE `ajustes_stock` (
   `usuario_id` int(11) NOT NULL,
   `fecha_ajuste` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `clientes`
+--
+
+CREATE TABLE `clientes` (
+  `id` int(11) NOT NULL,
+  `tipo` enum('servicio','ocasional') NOT NULL,
+  `nombre_completo` varchar(150) NOT NULL,
+  `telefono` varchar(30) DEFAULT NULL,
+  `email` varchar(150) DEFAULT NULL,
+  `direccion` varchar(255) DEFAULT NULL,
+  `latitud` decimal(10,7) DEFAULT NULL,
+  `longitud` decimal(10,7) DEFAULT NULL,
+  `notas` text DEFAULT NULL,
+  `plan` varchar(100) DEFAULT NULL,
+  `velocidad_mbps` int(11) DEFAULT NULL,
+  `cuota_mensual` decimal(10,2) DEFAULT NULL,
+  `fecha_instalacion` date DEFAULT NULL,
+  `dia_corte` tinyint(3) UNSIGNED DEFAULT NULL,
+  `estado` enum('activo','suspendido','cancelado') DEFAULT 'activo',
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `clientes_pagos`
+--
+
+CREATE TABLE `clientes_pagos` (
+  `id` int(11) NOT NULL,
+  `cliente_id` int(11) NOT NULL,
+  `periodo_year` smallint(6) NOT NULL,
+  `periodo_month` tinyint(4) NOT NULL,
+  `fecha_vencimiento` date NOT NULL,
+  `monto` decimal(10,2) NOT NULL,
+  `estado` enum('pendiente','pagado','vencido','suspendido') NOT NULL DEFAULT 'pendiente',
+  `pagado_at` datetime DEFAULT NULL,
+  `corte_servicio_at` datetime DEFAULT NULL,
+  `notas` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -86,7 +135,7 @@ INSERT INTO `configuraciones` (`id`, `clave`, `valor`, `descripcion`, `updated_a
 (3, 'timezone', 'America/Mexico_City', 'Zona horaria', '2025-07-19 01:47:13'),
 (4, 'backup_enabled', 'true', 'Habilitar respaldos automáticos', '2025-07-19 01:47:13'),
 (5, 'version', '1.0.0', 'Versión del sistema', '2025-07-19 01:47:13'),
-(6, 'porcentaje_ganancia_creador', '20', 'Porcentaje de ganancia del creador de fichas sobre las ventas', '2025-07-28 02:16:23');
+(6, 'porcentaje_ganancia_creador', '80', 'Porcentaje de ganancia del creador de fichas sobre las ventas', '2025-08-10 03:06:33');
 
 -- --------------------------------------------------------
 
@@ -130,8 +179,19 @@ CREATE TABLE `cortes_caja` (
   `detalle_tipos` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`detalle_tipos`)),
   `observaciones` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `revendedor_id` int(11) DEFAULT NULL,
+  `revendedor_nombre` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Volcado de datos para la tabla `cortes_caja`
+--
+
+INSERT INTO `cortes_caja` (`id`, `fecha_corte`, `usuario_id`, `usuario_nombre`, `total_ingresos`, `total_ganancias`, `total_revendedores`, `detalle_tipos`, `observaciones`, `created_at`, `updated_at`, `revendedor_id`, `revendedor_nombre`) VALUES
+(0, '2025-08-09', 1, 'admin', 100.00, 20.00, 80.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":50,\"vendidas\":20,\"inventarioResultante\":30,\"valorVendido\":100,\"valor_total\":100,\"precio\":\"5.00\"},{\"tipo\":\"3 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"9.00\"},{\"tipo\":\"5 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"25.00\"}]', 'Corte para abarrotes', '2025-08-09 03:45:38', '2025-08-09 04:22:19', 7, 'abarrotes'),
+(0, '2025-08-09', 1, 'admin', 130.00, 26.00, 104.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":25,\"vendidas\":0,\"inventarioResultante\":25,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"5.00\"},{\"tipo\":\"3 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"9.00\"},{\"tipo\":\"5 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"25.00\"},{\"tipo\":\"10 horas\",\"inventarioActual\":50,\"vendidas\":10,\"inventarioResultante\":40,\"valorVendido\":130,\"valor_total\":130,\"precio\":\"13.00\"}]', 'Corte para abarrotes', '2025-08-09 15:13:11', '2025-08-09 15:13:11', 7, NULL),
+(0, '2025-08-10', 1, 'admin', 10.00, 2.00, 8.00, '[{\"tipo\":\"1 hora\",\"inventarioActual\":25,\"vendidas\":2,\"inventarioResultante\":23,\"valorVendido\":10,\"valor_total\":10,\"precio\":\"5.00\"},{\"tipo\":\"3 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"9.00\"},{\"tipo\":\"5 horas\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"25.00\"},{\"tipo\":\"10 horas\",\"inventarioActual\":40,\"vendidas\":0,\"inventarioResultante\":40,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"13.00\"},{\"tipo\":\"1 semana\",\"inventarioActual\":0,\"vendidas\":0,\"inventarioResultante\":0,\"valorVendido\":0,\"valor_total\":0,\"precio\":\"100.00\"}]', 'Corte para abarrotes', '2025-08-09 16:11:33', '2025-08-09 16:11:33', 7, NULL);
 
 -- --------------------------------------------------------
 
@@ -169,6 +229,48 @@ CREATE TABLE `entregas` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Volcado de datos para la tabla `entregas`
+--
+
+INSERT INTO `entregas` (`id`, `revendedor_id`, `tipo_ficha_id`, `cantidad`, `tipo_movimiento`, `nota`, `created_by`, `created_at`, `updated_at`) VALUES
+(0, 7, 1, 50, 'entrega', 'Entrega desde stock global', 1, '2025-08-09 03:43:09', '2025-08-09 03:43:09'),
+(0, 7, 4, 50, 'entrega', 'Entrega desde stock global', 1, '2025-08-09 15:12:44', '2025-08-09 15:12:44');
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `equipos`
+--
+
+CREATE TABLE `equipos` (
+  `id` int(11) NOT NULL,
+  `revendedor_id` int(11) NOT NULL,
+  `nombre` varchar(150) NOT NULL,
+  `descripcion` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  `returned_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `gastos`
+--
+
+CREATE TABLE `gastos` (
+  `id` int(11) NOT NULL,
+  `tipo` enum('prestado','viaticos') NOT NULL,
+  `persona` varchar(150) NOT NULL,
+  `monto` decimal(10,2) NOT NULL CHECK (`monto` >= 0),
+  `motivo` varchar(255) DEFAULT NULL,
+  `pagado` tinyint(1) NOT NULL DEFAULT 0,
+  `pagado_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 -- --------------------------------------------------------
 
 --
@@ -188,6 +290,14 @@ CREATE TABLE `inventarios` (
   `activo` tinyint(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Volcado de datos para la tabla `inventarios`
+--
+
+INSERT INTO `inventarios` (`id`, `revendedor_id`, `tipo_ficha_id`, `fichas_entregadas`, `fichas_vendidas`, `stock_actual`, `stock_minimo`, `ubicacion`, `fecha_actualizacion`, `activo`) VALUES
+(0, 7, 1, 50, 27, 23, 10, NULL, '2025-08-09 16:11:33', 1),
+(0, 7, 4, 50, 10, 40, 10, NULL, '2025-08-09 15:13:11', 1);
+
 -- --------------------------------------------------------
 
 --
@@ -202,6 +312,22 @@ CREATE TABLE `inventarios_revendedor` (
   `fichas_vendidas` int(11) DEFAULT 0,
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `notas_trabajadores`
+--
+
+CREATE TABLE `notas_trabajadores` (
+  `id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `revendedor_id` int(11) DEFAULT NULL,
+  `titulo` varchar(150) NOT NULL,
+  `contenido` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -270,6 +396,8 @@ CREATE TABLE `revendedores` (
   `responsable` varchar(100) NOT NULL,
   `telefono` varchar(20) DEFAULT NULL,
   `direccion` text DEFAULT NULL,
+  `latitud` decimal(10,7) DEFAULT NULL,
+  `longitud` decimal(10,7) DEFAULT NULL,
   `activo` tinyint(1) DEFAULT 1,
   `porcentaje_comision` decimal(5,2) NOT NULL DEFAULT 20.00 COMMENT 'Porcentaje de comisión sobre el total de ventas (ej: 20.00 = 20%)',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -280,8 +408,8 @@ CREATE TABLE `revendedores` (
 -- Volcado de datos para la tabla `revendedores`
 --
 
-INSERT INTO `revendedores` (`id`, `usuario_id`, `nombre_negocio`, `nombre`, `responsable`, `telefono`, `direccion`, `activo`, `porcentaje_comision`, `created_at`, `updated_at`) VALUES
-(0, 0, 'cafe maria', 'maria juana', 'maria juana', '', '', 1, 20.00, '2025-08-07 18:04:24', '2025-08-07 18:04:24');
+INSERT INTO `revendedores` (`id`, `usuario_id`, `nombre_negocio`, `nombre`, `responsable`, `telefono`, `direccion`, `latitud`, `longitud`, `activo`, `porcentaje_comision`, `created_at`, `updated_at`) VALUES
+(7, 33, 'abarrotes', 'maria juana', 'maria juana', '', '', NULL, NULL, 1, 20.00, '2025-08-08 22:36:53', '2025-08-10 04:09:15');
 
 -- --------------------------------------------------------
 
@@ -303,7 +431,11 @@ CREATE TABLE `stock_global` (
 --
 
 INSERT INTO `stock_global` (`id`, `tipo_ficha_id`, `cantidad_total`, `cantidad_disponible`, `cantidad_entregada`, `updated_at`) VALUES
-(1, 29, 250, 48, 202, '2025-08-02 18:51:46');
+(1, 29, 250, 48, 202, '2025-08-02 18:51:46'),
+(0, 1, 100, 50, 50, '2025-08-09 03:43:09'),
+(0, 2, 100, 100, 0, '2025-08-09 03:01:31'),
+(0, 3, 50, 50, 0, '2025-08-09 03:14:48'),
+(0, 4, 98, 48, 50, '2025-08-09 15:12:44');
 
 -- --------------------------------------------------------
 
@@ -327,6 +459,15 @@ CREATE TABLE `tareas_mantenimiento` (
   `created_by` int(11) NOT NULL,
   `trabajador_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Volcado de datos para la tabla `tareas_mantenimiento`
+--
+
+INSERT INTO `tareas_mantenimiento` (`id`, `revendedor_id`, `titulo`, `descripcion`, `prioridad`, `estado`, `fecha_asignacion`, `fecha_vencimiento`, `fecha_completado`, `notas`, `created_at`, `updated_at`, `created_by`, `trabajador_id`) VALUES
+(1, 6, 'reivision de modem', 'revisa el modem', 'Media', 'Completado', '2025-08-08', '2025-08-09', '2025-08-08', 'solo era un clable', '2025-08-08 22:08:45', '2025-08-08 22:10:41', 1, 13),
+(2, 7, 'revisar el moden', 'revisar el moden que se apaga', 'Media', 'Completado', '2025-08-08', '2025-08-09', '2025-08-08', 'solo era un cable mal conectado', '2025-08-08 22:39:27', '2025-08-08 22:48:50', 1, 14),
+(3, 7, 'jbbb', 'iuhjhiih', 'Media', 'Completado', '2025-08-09', '2025-08-14', '2025-08-09', 'tdrtdr', '2025-08-09 15:14:31', '2025-08-09 15:16:13', 1, 14);
 
 -- --------------------------------------------------------
 
@@ -353,11 +494,11 @@ CREATE TABLE `tipos_ficha` (
 CREATE TABLE `tipos_fichas` (
   `id` int(11) NOT NULL,
   `nombre` varchar(100) NOT NULL,
-  `descripcion` text DEFAULT NULL,
+  `descripcion` varchar(255) DEFAULT NULL,
   `duracion_horas` int(11) NOT NULL,
-  `precio_compra` decimal(10,2) NOT NULL,
+  `precio_compra` decimal(10,2) NOT NULL DEFAULT 0.00,
   `precio_venta` decimal(10,2) NOT NULL,
-  `activo` tinyint(1) DEFAULT 1,
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
   `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
   `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -367,7 +508,12 @@ CREATE TABLE `tipos_fichas` (
 --
 
 INSERT INTO `tipos_fichas` (`id`, `nombre`, `descripcion`, `duracion_horas`, `precio_compra`, `precio_venta`, `activo`, `fecha_creacion`, `fecha_actualizacion`) VALUES
-(29, '1 hora', 'Ficha de 1 hora', 1, 0.00, 5.00, 1, '2025-08-02 06:02:14', '2025-08-02 06:02:14');
+(1, '1 hora', 'Ficha de 1 hora', 1, 0.00, 5.00, 1, '2025-08-09 02:54:48', '2025-08-09 02:54:48'),
+(2, '3 horas', 'Ficha de 3 horas', 3, 0.00, 9.00, 1, '2025-08-09 02:54:48', '2025-08-09 02:54:48'),
+(3, '5 horas', 'Ficha de 5 horas', 5, 0.00, 25.00, 1, '2025-08-09 03:06:29', '2025-08-09 03:06:29'),
+(4, '10 horas', 'Ficha de 10 horas', 10, 0.00, 13.00, 1, '2025-08-09 15:10:22', '2025-08-09 15:10:22'),
+(5, '1 semana', 'Ficha de 1 semana', 168, 0.00, 100.00, 1, '2025-08-09 15:46:20', '2025-08-09 15:46:20'),
+(6, '2 horas', 'Ficha de 2 horas', 2, 0.00, 8.00, 1, '2025-08-10 03:08:39', '2025-08-10 03:08:39');
 
 -- --------------------------------------------------------
 
@@ -402,6 +548,7 @@ CREATE TABLE `usuarios` (
   `nombre_completo` varchar(100) NOT NULL,
   `tipo_usuario` enum('admin','revendedor','trabajador') NOT NULL,
   `revendedor_id` int(11) DEFAULT NULL,
+  `cliente_id` int(11) DEFAULT NULL,
   `activo` tinyint(1) DEFAULT 1,
   `ultimo_login` timestamp NULL DEFAULT NULL,
   `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -416,8 +563,9 @@ CREATE TABLE `usuarios` (
 -- Volcado de datos para la tabla `usuarios`
 --
 
-INSERT INTO `usuarios` (`id`, `username`, `email`, `password_hash`, `nombre_completo`, `tipo_usuario`, `revendedor_id`, `activo`, `ultimo_login`, `fecha_creacion`, `created_at`, `updated_at`, `telefono`, `role`, `especialidad`) VALUES
-(1, 'admin', 'admin@fichas.com', '$2b$10$vLnz3rDLw9NpaByJZsuIBOg94PGxNK7qnLk5gBeJqhGlYPVqUlct2', 'Administrador Principal', 'admin', NULL, 1, '2025-08-07 18:28:26', '2025-07-29 03:15:23', '2025-08-02 04:34:50', '2025-08-07 18:28:26', NULL, 'admin', NULL);
+INSERT INTO `usuarios` (`id`, `username`, `email`, `password_hash`, `nombre_completo`, `tipo_usuario`, `revendedor_id`, `cliente_id`, `activo`, `ultimo_login`, `fecha_creacion`, `created_at`, `updated_at`, `telefono`, `role`, `especialidad`) VALUES
+(1, 'admin', 'admin@fichas.com', '$2b$10$vLnz3rDLw9NpaByJZsuIBOg94PGxNK7qnLk5gBeJqhGlYPVqUlct2', 'Administrador Principal', 'admin', NULL, NULL, 1, '2025-08-10 03:24:55', '2025-07-29 03:15:23', '2025-08-02 04:34:50', '2025-08-10 03:24:55', NULL, 'admin', NULL),
+(33, 'maria', 'maria@empresa.com', '$2b$10$SeDJuFDYyguMKqmpP.BeW.Y4mdcEesgI18ZJqwWqh21/HbsqkuPb.', 'maria juana', 'revendedor', 7, NULL, 1, '2025-08-09 16:08:54', '2025-08-08 22:36:53', '2025-08-08 22:36:53', '2025-08-09 16:08:54', NULL, 'revendedor', NULL);
 
 -- --------------------------------------------------------
 
@@ -461,6 +609,26 @@ CREATE TRIGGER `actualizar_inventario_venta` AFTER INSERT ON `ventas` FOR EACH R
             END
 $$
 DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `ventas_ocasionales`
+--
+
+CREATE TABLE `ventas_ocasionales` (
+  `id` int(11) NOT NULL,
+  `cliente_id` int(11) NOT NULL,
+  `tipo_ficha_id` int(11) NOT NULL,
+  `cantidad` int(11) NOT NULL,
+  `precio_unitario` decimal(10,2) NOT NULL,
+  `subtotal` decimal(12,2) NOT NULL,
+  `nota` varchar(255) DEFAULT NULL,
+  `fecha_venta` date NOT NULL,
+  `usuario_id` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -538,11 +706,73 @@ ALTER TABLE `ajustes_stock`
   ADD KEY `usuario_id` (`usuario_id`);
 
 --
+-- Indices de la tabla `clientes`
+--
+ALTER TABLE `clientes`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_clientes_tipo` (`tipo`),
+  ADD KEY `idx_clientes_activo` (`activo`),
+  ADD KEY `idx_clientes_estado` (`estado`),
+  ADD KEY `idx_clientes_lat` (`latitud`),
+  ADD KEY `idx_clientes_lng` (`longitud`);
+
+--
+-- Indices de la tabla `clientes_pagos`
+--
+ALTER TABLE `clientes_pagos`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_cliente_periodo` (`cliente_id`,`periodo_year`,`periodo_month`),
+  ADD KEY `idx_cliente` (`cliente_id`),
+  ADD KEY `idx_estado` (`estado`);
+
+--
 -- Indices de la tabla `configuraciones`
 --
 ALTER TABLE `configuraciones`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `clave` (`clave`);
+
+--
+-- Indices de la tabla `cortes_caja`
+--
+ALTER TABLE `cortes_caja`
+  ADD KEY `idx_cortes_revendedor` (`revendedor_id`);
+
+--
+-- Indices de la tabla `equipos`
+--
+ALTER TABLE `equipos`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_revendedor` (`revendedor_id`),
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_equipos_returned_at` (`returned_at`);
+
+--
+-- Indices de la tabla `gastos`
+--
+ALTER TABLE `gastos`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_gastos_tipo` (`tipo`),
+  ADD KEY `idx_gastos_persona` (`persona`),
+  ADD KEY `idx_gastos_pagado` (`pagado`),
+  ADD KEY `idx_gastos_created_at` (`created_at`);
+
+--
+-- Indices de la tabla `notas_trabajadores`
+--
+ALTER TABLE `notas_trabajadores`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_usuario` (`usuario_id`),
+  ADD KEY `idx_revendedor` (`revendedor_id`);
+
+--
+-- Indices de la tabla `revendedores`
+--
+ALTER TABLE `revendedores`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_revendedor_usuario` (`usuario_id`),
+  ADD KEY `idx_revendedores_lat` (`latitud`),
+  ADD KEY `idx_revendedores_lng` (`longitud`);
 
 --
 -- Indices de la tabla `tareas_mantenimiento`
@@ -551,14 +781,159 @@ ALTER TABLE `tareas_mantenimiento`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indices de la tabla `tipos_fichas`
+--
+ALTER TABLE `tipos_fichas`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indices de la tabla `trabajadores_mantenimiento`
+--
+ALTER TABLE `trabajadores_mantenimiento`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_trabajador_usuario` (`usuario_id`);
+
+--
+-- Indices de la tabla `usuarios`
+--
+ALTER TABLE `usuarios`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_usuarios_cliente` (`cliente_id`);
+
+--
+-- Indices de la tabla `ventas_ocasionales`
+--
+ALTER TABLE `ventas_ocasionales`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_cliente` (`cliente_id`),
+  ADD KEY `idx_tipo_ficha` (`tipo_ficha_id`),
+  ADD KEY `idx_fecha` (`fecha_venta`),
+  ADD KEY `fk_vo_usuario` (`usuario_id`);
+
+--
 -- AUTO_INCREMENT de las tablas volcadas
 --
+
+--
+-- AUTO_INCREMENT de la tabla `abastecimientos`
+--
+ALTER TABLE `abastecimientos`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT de la tabla `clientes`
+--
+ALTER TABLE `clientes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `clientes_pagos`
+--
+ALTER TABLE `clientes_pagos`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `equipos`
+--
+ALTER TABLE `equipos`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `gastos`
+--
+ALTER TABLE `gastos`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `notas_trabajadores`
+--
+ALTER TABLE `notas_trabajadores`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `revendedores`
+--
+ALTER TABLE `revendedores`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT de la tabla `tareas_mantenimiento`
 --
 ALTER TABLE `tareas_mantenimiento`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT de la tabla `tipos_fichas`
+--
+ALTER TABLE `tipos_fichas`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT de la tabla `trabajadores_mantenimiento`
+--
+ALTER TABLE `trabajadores_mantenimiento`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
+-- AUTO_INCREMENT de la tabla `usuarios`
+--
+ALTER TABLE `usuarios`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=36;
+
+--
+-- AUTO_INCREMENT de la tabla `ventas_ocasionales`
+--
+ALTER TABLE `ventas_ocasionales`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- Restricciones para tablas volcadas
+--
+
+--
+-- Filtros para la tabla `clientes_pagos`
+--
+ALTER TABLE `clientes_pagos`
+  ADD CONSTRAINT `fk_clientes_pagos_cliente` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE CASCADE;
+
+--
+-- Filtros para la tabla `equipos`
+--
+ALTER TABLE `equipos`
+  ADD CONSTRAINT `fk_equipos_revendedor` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE CASCADE;
+
+--
+-- Filtros para la tabla `notas_trabajadores`
+--
+ALTER TABLE `notas_trabajadores`
+  ADD CONSTRAINT `fk_notas_revendedor` FOREIGN KEY (`revendedor_id`) REFERENCES `revendedores` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_notas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE;
+
+--
+-- Filtros para la tabla `revendedores`
+--
+ALTER TABLE `revendedores`
+  ADD CONSTRAINT `fk_revendedor_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Filtros para la tabla `trabajadores_mantenimiento`
+--
+ALTER TABLE `trabajadores_mantenimiento`
+  ADD CONSTRAINT `fk_trabajador_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Filtros para la tabla `usuarios`
+--
+ALTER TABLE `usuarios`
+  ADD CONSTRAINT `fk_usuarios_cliente` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE SET NULL;
+
+--
+-- Filtros para la tabla `ventas_ocasionales`
+--
+ALTER TABLE `ventas_ocasionales`
+  ADD CONSTRAINT `fk_vo_cliente` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`),
+  ADD CONSTRAINT `fk_vo_tipo_ficha` FOREIGN KEY (`tipo_ficha_id`) REFERENCES `tipos_fichas` (`id`),
+  ADD CONSTRAINT `fk_vo_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -9,7 +9,7 @@ import {
   CheckCircle, 
   AlertCircle 
 } from 'lucide-react';
-import usuariosService from '../../services/usuariosService';
+import usuariosService from '@services/usuariosService';
 
 const CambiarPassword = ({ isOpen, onClose }) => {
   const [formData, setFormData] = useState({

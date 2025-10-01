@@ -22,6 +22,7 @@ class FichasService {
       
       // Entregas
       entregas: '/entregas',
+  entregasHistorial: '/entregas/historial',
       entregasRevendedor: (id) => `/entregas/revendedor/${id}`,
       
       // Ventas
@@ -29,7 +30,12 @@ class FichasService {
       ventasRevendedor: (id) => `/ventas/revendedor/${id}`,
       
       // Stock global
-      stockGlobal: '/stock-global'
+    stockGlobal: '/stock-global'
+  , notas: '/notas',
+  // Equipos (inventario de equipos asignados a clientes)
+  equipos: '/equipos',
+  // Inventario simple de equipos
+  equiposInventario: '/equipos-inventario'
     };
 
     // Cache interno simple (memoria) con TTL
@@ -72,7 +78,9 @@ class FichasService {
   // ===== REVENDEDORES =====
   
   async obtenerRevendedores(options = {}) {
-    return await this._getCached('revendedores', () => apiHelpers.get(this.endpoints.revendedores), options);
+  // Por defecto ocultar inactivos; los admins pueden pedir includeInactive explícito
+  const url = `${this.endpoints.revendedores}?includeInactive=0`;
+  return await this._getCached('revendedores', () => apiHelpers.get(url), options);
   }
 
   async obtenerRevendedor(id, options = {}) {
@@ -245,6 +253,19 @@ class FichasService {
     return await this._getCached('entregas', () => apiHelpers.get(this.endpoints.entregas), options);
   }
 
+  async obtenerHistorialEntregas({ page = 1, pageSize = 25, revendedor, revendedor_id, tipo_ficha_id, desde, hasta } = {}) {
+    const params = new URLSearchParams();
+    if (page) params.set('page', page);
+    if (pageSize) params.set('pageSize', pageSize);
+    if (revendedor) params.set('revendedor', revendedor);
+    if (revendedor_id) params.set('revendedor_id', revendedor_id);
+    if (tipo_ficha_id) params.set('tipo_ficha_id', tipo_ficha_id);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const url = `${this.endpoints.entregasHistorial}?${params.toString()}`;
+    return await apiHelpers.get(url);
+  }
+
   async obtenerEntregasRevendedor(revendedorId, options = {}) {
     return await this._getCached(`entregas:${revendedorId}`, () => apiHelpers.get(this.endpoints.entregasRevendedor(revendedorId)), options);
   }
@@ -291,6 +312,87 @@ class FichasService {
 
   async entregarFichasDeStock(entregaData) {
     return await apiHelpers.post(`${this.endpoints.entregas}`, entregaData);
+  }
+
+  // ===== NOTAS TRABAJADORES =====
+  async crearNota({ titulo, contenido, revendedor_id }) {
+    return await apiHelpers.post(this.endpoints.notas, { titulo, contenido, revendedor_id });
+  }
+
+  async listarNotas({ revendedor_id, q, page = 1, pageSize = 25 } = {}) {
+    const params = new URLSearchParams();
+    if (revendedor_id) params.set('revendedor_id', revendedor_id);
+    if (q) params.set('q', q);
+    if (page) params.set('page', page);
+    if (pageSize) params.set('pageSize', pageSize);
+    const url = `${this.endpoints.notas}?${params.toString()}`;
+    return await apiHelpers.get(url);
+  }
+
+  async actualizarNota(id, { titulo, contenido }) {
+    return await apiHelpers.put(`${this.endpoints.notas}/${id}`, { titulo, contenido });
+  }
+
+  async eliminarNota(id) {
+    return await apiHelpers.delete(`${this.endpoints.notas}/${id}`);
+  }
+
+  // ===== EQUIPOS =====
+  async listarEquipos({ revendedor_id, cliente_id, includeInactive, client_ref } = {}) {
+    const params = new URLSearchParams();
+    if (client_ref) params.set('client_ref', client_ref);
+    if (revendedor_id) params.set('revendedor_id', revendedor_id);
+    if (cliente_id) params.set('cliente_id', cliente_id);
+    if (includeInactive) params.set('includeInactive', '1');
+    const url = params.toString()
+      ? `${this.endpoints.equipos}?${params.toString()}`
+      : this.endpoints.equipos;
+    const res = await apiHelpers.get(url);
+    return res?.items || [];
+  }
+
+  async crearEquipo({ nombre, descripcion, revendedor_id, cliente_id }) {
+    const payload = { nombre, descripcion };
+    if (revendedor_id !== undefined && revendedor_id !== null) payload.revendedor_id = revendedor_id;
+    if (cliente_id !== undefined && cliente_id !== null) payload.cliente_id = cliente_id;
+    return await apiHelpers.post(this.endpoints.equipos, payload);
+  }
+
+  async actualizarEquipo(id, updates) {
+    return await apiHelpers.put(`${this.endpoints.equipos}/${id}`, updates);
+  }
+
+  async eliminarEquipo(id) {
+    return await apiHelpers.delete(`${this.endpoints.equipos}/${id}`);
+  }
+
+  async devolverEquipo(id) {
+    return await apiHelpers.post(`${this.endpoints.equipos}/${id}/devolver`, {});
+  }
+
+  // ===== EQUIPOS INVENTARIO SIMPLE =====
+  async listarEquiposInventario() {
+    const res = await apiHelpers.get(this.endpoints.equiposInventario);
+    return res?.items || [];
+  }
+
+  async crearEquipoInventario({ nombre, cantidad = 0, estado = 'nuevo', descripcion }) {
+    return await apiHelpers.post(this.endpoints.equiposInventario, { nombre, cantidad, estado, descripcion });
+  }
+
+  async actualizarEquipoInventario(id, updates) {
+    return await apiHelpers.put(`${this.endpoints.equiposInventario}/${id}`, updates);
+  }
+
+  async eliminarEquipoInventario(id) {
+    return await apiHelpers.delete(`${this.endpoints.equiposInventario}/${id}`);
+  }
+
+  // Clientes activos combinados para equipos
+  async obtenerClientesEquiposActivos() {
+    const url = `${this.endpoints.equipos}/clientes-activos`;
+    const res = await apiHelpers.get(url);
+    return res?.items || [];
   }
 
   // ===== HELPERS =====
@@ -374,19 +476,28 @@ class FichasService {
   }
 
   async actualizarConfiguracion(clave, valor, descripcion) {
-    return await apiHelpers.put(`/configuracion/${clave}`, {
+    const res = await apiHelpers.put(`/configuracion/${clave}`, {
       valor,
       descripcion
     });
+    try {
+      // Emitir evento de cambio de configuración
+      window.dispatchEvent(new CustomEvent('configChanged', { detail: { clave, valor } }));
+    } catch (_) { /* no-op en SSR/tests */ }
+    return res;
   }
 
   async crearConfiguracion(clave, valor, descripcion, tipo = 'number') {
-    return await apiHelpers.post('/configuracion', {
+    const res = await apiHelpers.post('/configuracion', {
       clave,
       valor,
       descripcion,
       tipo
     });
+    try {
+      window.dispatchEvent(new CustomEvent('configChanged', { detail: { clave, valor } }));
+    } catch (_) { /* no-op */ }
+    return res;
   }
 }
 

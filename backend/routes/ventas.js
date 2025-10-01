@@ -10,7 +10,7 @@ router.get('/', authenticateToken, requireRole(['admin', 'trabajador']), async (
     const { fecha_desde, fecha_hasta, revendedor_id, limite } = req.query;
 
     let sql = `
-      SELECT v.*, r.nombre as revendedor_nombre,
+      SELECT v.*, COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre,
              u.username as usuario_venta
       FROM ventas v
@@ -74,7 +74,7 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
     }
 
     let sql = `
-      SELECT v.*, r.nombre as revendedor_nombre,
+      SELECT v.*, COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
              u.username as usuario_venta
       FROM ventas v
@@ -115,7 +115,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const venta = await query(`
-      SELECT v.*, r.nombre as revendedor_nombre,
+      SELECT v.*, COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
              u.username as usuario_venta
       FROM ventas v
@@ -226,7 +226,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
     // Obtener la venta creada
     const nuevaVenta = await query(`
-      SELECT v.*, r.nombre as revendedor_nombre,
+      SELECT v.*, COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
              u.username as usuario_venta
       FROM ventas v
@@ -299,12 +299,12 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'trabajador']), asyn
 
     // Obtener la venta actualizada
     const ventaActualizada = await query(`
-      SELECT v.*, r.nombre as revendedor_nombre,
+      SELECT v.*, COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
              u.username as usuario_venta
       FROM ventas v
       JOIN revendedores r ON v.revendedor_id = r.id
-      JOIN tipo_ficha tf ON v.tipo_ficha_id = tf.id
+      JOIN tipos_fichas tf ON v.tipo_ficha_id = tf.id
       LEFT JOIN usuarios u ON v.usuario_id = u.id
       WHERE v.id = ?
     `, [id]);

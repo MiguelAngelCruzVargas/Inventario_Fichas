@@ -1,7 +1,7 @@
 // Stock.jsx - Gestión de Stock Global de Fichas (Versión Optimizada Sin Recarga Manual)
 import React, { useState, useEffect } from 'react';
-import { useFichas } from '../../context/FichasContext';
-import { fichasService } from '../../services/fichasService';
+import { useFichas } from '@context/FichasContext';
+import { fichasService } from '@services/fichasService';
 import { 
   Package, 
   Plus, 
@@ -911,7 +911,7 @@ const Stock = () => {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="w-full max-w-none mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center space-x-4">
                 <div className="w-14 h-14 bg-white border border-gray-200 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"><Package className="w-7 h-7 text-blue-600" /></div>

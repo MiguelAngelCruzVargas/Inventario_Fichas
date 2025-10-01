@@ -1,4 +1,5 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { query, queryOne, db } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
 
@@ -7,10 +8,11 @@ const router = express.Router();
 // GET /revendedores - Obtener todos los revendedores (activos e inactivos)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    console.log('🔍 Consultando revendedores...');
+  console.log('🔍 Consultando revendedores...');
+  const includeInactive = req.query.includeInactive === '1' || req.query.includeInactive === 'true';
     
-    // Obtener TODOS los revendedores para mostrar historial completo
-    const todosRevendedores = await query(`
+    // Obtener revendedores, por defecto solo activos; si includeInactive=1, traer todos
+    const baseQuery = `
       SELECT r.*, 
              u.activo as usuario_activo,
              u.username,
@@ -21,15 +23,23 @@ router.get('/', authenticateToken, async (req, res) => {
       LEFT JOIN usuarios u ON r.usuario_id = u.id
       LEFT JOIN entregas e ON r.id = e.revendedor_id
       LEFT JOIN ventas v ON r.id = v.revendedor_id
+    `;
+
+    const whereClause = includeInactive ? '' : 'WHERE r.activo = 1 AND (u.activo = 1 OR u.activo IS NULL)';
+    const todosRevendedores = await query(`
+      ${baseQuery}
+      ${whereClause}
       GROUP BY r.id, r.activo, u.activo, u.username
       ORDER BY r.activo DESC, r.nombre_negocio
     `);
     
     console.log('📋 Todos los revendedores en BD:', todosRevendedores);
     
-    // Separar activos de inactivos
+    // Separar activos de inactivos (solo si se incluyeron)
     const revendedoresActivos = todosRevendedores.filter(r => r.activo === 1 && r.usuario_activo === 1);
-    const revendedoresInactivos = todosRevendedores.filter(r => r.activo === 0 || r.usuario_activo === 0);
+    const revendedoresInactivos = includeInactive 
+      ? todosRevendedores.filter(r => r.activo === 0 || r.usuario_activo === 0)
+      : [];
 
     console.log(`✅ Revendedores: ${revendedoresActivos.length} activos, ${revendedoresInactivos.length} inactivos`);
 
@@ -57,9 +67,11 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     // Los inactivos no necesitan inventarios/precios detallados
-    for (let revendedor of revendedoresInactivos) {
-      revendedor.inventarios = [];
-      revendedor.precios = [];
+    if (includeInactive) {
+      for (let revendedor of revendedoresInactivos) {
+        revendedor.inventarios = [];
+        revendedor.precios = [];
+      }
     }
 
     // MANTENER COMPATIBILIDAD CON FRONTEND:
@@ -74,7 +86,8 @@ router.get('/', authenticateToken, async (req, res) => {
       activos: revendedoresActivos.length,
       inactivos: revendedoresInactivos.length,
       revendedoresActivos,
-      revendedoresInactivos
+      revendedoresInactivos,
+      includeInactive
     };
 
     res.json(response);
@@ -334,7 +347,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
     console.log('POST /revendedores - Request body:', req.body);
     console.log('POST /revendedores - User:', req.user);
     
-    const { nombre_negocio, nombre, responsable, telefono, direccion, porcentaje_comision = 20.00 } = req.body;
+  const { nombre_negocio, nombre, responsable, telefono, direccion, porcentaje_comision = 20.00, email } = req.body;
 
     // Validaciones
     if (!nombre_negocio || !responsable || !telefono) {
@@ -400,14 +413,33 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
       return password;
     };
 
-    const password = generatePassword();
+  const password = generatePassword();
     
-    // Encriptar contraseña
-    const bcrypt = await import('bcrypt');
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Generar email único
-    const email = `${username}@sistema.local`;
+  // Encriptar contraseña (usar bcryptjs para evitar dependencias nativas)
+  const saltRounds = 10;
+  const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Email: reutilizar lógica robusta de usuarios.js
+    let cleanEmail;
+    if (email !== undefined && email !== null && typeof email === 'string' && email.trim() !== '') {
+      cleanEmail = email.trim();
+    } else {
+      cleanEmail = `${username}@empresa.com`;
+    }
+    if (!cleanEmail || cleanEmail === 'undefined@empresa.com') {
+      cleanEmail = 'usuario@empresa.com';
+    }
+
+    // Verificar conflicto de email si no es el generado por defecto
+    if (cleanEmail && cleanEmail !== `${username}@empresa.com`) {
+      const [existingEmail] = await db.execute('SELECT id FROM usuarios WHERE email = ?', [cleanEmail]);
+      if (existingEmail.length > 0) {
+        return res.status(400).json({
+          error: 'Email duplicado',
+          detail: 'El email ya está registrado'
+        });
+      }
+    }
 
     // Usar conexión directa para transacciones
     const connection = await db.getConnection();
@@ -420,7 +452,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
       const [userResult] = await connection.execute(`
         INSERT INTO usuarios (username, password_hash, email, nombre_completo, role, tipo_usuario, activo, created_at)
         VALUES (?, ?, ?, ?, 'revendedor', 'revendedor', 1, NOW())
-      `, [username, hashedPassword, email, responsable]);
+      `, [username, hashedPassword, cleanEmail, responsable]);
 
       const usuarioId = userResult.insertId;
 
@@ -474,41 +506,45 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
   }
 });
 
-// DELETE /revendedores/:id - Eliminar revendedor (soft delete)
+// DELETE /revendedores/:id - Eliminar revendedor (soft delete, idempotente)
 router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verificar que el revendedor existe
-    const revendedor = await query(
-      'SELECT id, nombre FROM revendedores WHERE id = ? AND activo = 1',
+    // Buscar el revendedor sin filtrar por activo para permitir idempotencia
+    const rows = await query(
+      'SELECT id, nombre, activo FROM revendedores WHERE id = ? LIMIT 1',
       [id]
     );
 
-    if (!revendedor || revendedor.length === 0) {
+    if (!rows || rows.length === 0) {
       return res.status(404).json({
         error: 'Revendedor no encontrado'
       });
     }
 
-    // Desactivar revendedor (soft delete)
-    await query(`
-      UPDATE revendedores 
-      SET activo = 0 
-      WHERE id = ?
-    `, [id]);
+    const rev = rows[0];
 
-    // También desactivar todos los usuarios asociados al revendedor
+    // Desactivar revendedor si aún está activo
+    if (rev.activo === 1) {
+      await query(`
+        UPDATE revendedores 
+        SET activo = 0, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `, [id]);
+    }
+
+    // Desactivar todos los usuarios asociados al revendedor (si existiesen)
     await query(`
       UPDATE usuarios 
-      SET activo = 0
+      SET activo = 0, updated_at = CURRENT_TIMESTAMP
       WHERE revendedor_id = ?
     `, [id]);
 
     res.json({
-      message: 'Revendedor eliminado correctamente',
+      message: rev.activo === 1 ? 'Revendedor eliminado correctamente' : 'Revendedor ya estaba eliminado',
       id: parseInt(id),
-      nombre: revendedor[0].nombre
+      nombre: rev.nombre
     });
 
   } catch (error) {
@@ -524,7 +560,7 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
 router.put('/:id', authenticateToken, requireRole(['admin', 'trabajador']), async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, responsable, telefono, direccion, porcentaje_comision } = req.body;
+  const { nombre, responsable, telefono, direccion, porcentaje_comision, latitud, longitud } = req.body;
 
     // Verificar que el revendedor existe
     const existingRevendedor = await query(
@@ -596,6 +632,15 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'trabajador']), asyn
       values.push(porcentaje_comision);
     }
 
+    if (latitud !== undefined) {
+      updates.push('latitud = ?');
+      values.push(latitud === null ? null : Number(latitud));
+    }
+    if (longitud !== undefined) {
+      updates.push('longitud = ?');
+      values.push(longitud === null ? null : Number(longitud));
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({
         error: 'Sin cambios',
@@ -635,18 +680,14 @@ router.put('/:id/comision', authenticateToken, requireRole(['admin']), async (re
     const { porcentaje_comision } = req.body;
 
     // Validaciones
-    if (porcentaje_comision === undefined || porcentaje_comision === null) {
-      return res.status(400).json({
-        error: 'Datos incompletos',
-        detail: 'Se requiere porcentaje_comision'
-      });
-    }
-
-    if (porcentaje_comision < 0 || porcentaje_comision > 100) {
-      return res.status(400).json({
-        error: 'Porcentaje inválido',
-        detail: 'El porcentaje de comisión debe estar entre 0 y 100'
-      });
+    // Permitir null explícito para indicar "usar porcentaje global"
+    if (porcentaje_comision !== null && porcentaje_comision !== undefined) {
+      if (porcentaje_comision < 0 || porcentaje_comision > 100) {
+        return res.status(400).json({
+          error: 'Porcentaje inválido',
+          detail: 'El porcentaje de comisión debe estar entre 0 y 100'
+        });
+      }
     }
 
     // Verificar que el revendedor existe
@@ -661,12 +702,12 @@ router.put('/:id/comision', authenticateToken, requireRole(['admin']), async (re
       });
     }
 
-    // Actualizar solo el porcentaje de comisión
+    // Actualizar solo el porcentaje de comisión (permitiendo NULL para usar global)
     await query(`
       UPDATE revendedores 
-      SET porcentaje_comision = ?, updated_at = CURRENT_TIMESTAMP 
+      SET porcentaje_comision = ${porcentaje_comision === null ? 'NULL' : '?'}, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [porcentaje_comision, id]);
+    `, porcentaje_comision === null ? [id] : [porcentaje_comision, id]);
 
     res.json({
       message: 'Porcentaje de comisión actualizado correctamente',

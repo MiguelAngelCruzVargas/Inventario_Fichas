@@ -1,39 +1,31 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from '../context/AuthContext';
-import { FichasProvider } from '../context/FichasContext';
-import { UsersProvider } from '../context/UsersContext';
+import { AuthProvider, useAuth } from '@context/AuthContext';
+import { FichasProvider } from '@context/FichasContext';
+import { UsersProvider } from '@context/UsersContext';
 
 // Componentes
-import LoginForm from '../components/LoginForm';
-import AdminWrapper from '../components/Admin/AdminWrapper';
-import RevendedorWrapper from '../components/Revendedor/RevendedorWrapper';
-import TrabajadorWrapper from '../components/Trabajador/TrabajadorWrapper';
-import LoadingScreen from '../components/common/LoadingScreen';
-import SessionChangeNotification from '../components/common/SessionChangeNotification';
-import SessionExpirationWarning from '../components/common/SessionExpirationWarning';
+import LoginForm from '@components/LoginForm';
+import AdminWrapper from '@components/Admin/AdminWrapper';
+import RevendedorWrapper from '@components/Revendedor/RevendedorWrapper';
+import TrabajadorWrapper from '@components/Trabajador/TrabajadorWrapper';
+import ClienteWrapper from '@components/Cliente/ClienteWrapper';
+import ClientesServicioWrapper from '@components/ClientesServicio/ClientesServicioWrapper';
+import LoadingScreen from '@components/common/LoadingScreen';
+import SessionChangeNotification from '@components/common/SessionChangeNotification';
+import SessionExpirationWarning from '@components/common/SessionExpirationWarning';
 
 // Wrapper para manejar notificación de cambio de sesión
 const AppWrapper = ({ children }) => {
-  // Verificar que el contexto esté disponible
-  let authContext;
-  try {
-    authContext = useAuth();
-  } catch (error) {
-    console.error('AppWrapper: AuthContext no está disponible:', error);
-    // Fallback sin funcionalidades de auth
-    return <div className="relative">{children}</div>;
-  }
-
-  const { 
-    sessionChanged, 
-    sessionExpiring, 
-    user, 
-    isAuthenticated, 
-    dismissSessionChangeNotification, 
-    renewSession, 
-    logout 
-  } = authContext;
+  const {
+    sessionChanged,
+    sessionExpiring,
+    user,
+    isAuthenticated,
+    dismissSessionChangeNotification,
+    renewSession,
+    logout,
+  } = useAuth();
   
   const navigate = useNavigate();
 
@@ -53,6 +45,12 @@ const AppWrapper = ({ children }) => {
             break;
           case 'trabajador':
             redirectPath = '/trabajador';
+            break;
+          case 'cliente':
+            redirectPath = '/cliente';
+            break;
+          case 'cliente_servicio':
+            redirectPath = '/clientes-servicio';
             break;
         }
         
@@ -139,7 +137,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 const DashboardRedirect = () => {
   const { user, loading, isAuthenticated } = useAuth();
 
-  if (import.meta.env.DEV) console.log('🔀 DashboardRedirect - Estado actual:', {
+  if (globalThis.__APP_DEBUG__) console.log('🔀 DashboardRedirect - Estado actual:', {
     loading,
     isAuthenticated,
     user: user ? {
@@ -151,30 +149,36 @@ const DashboardRedirect = () => {
   });
 
   if (loading) {
-  if (import.meta.env.DEV) console.log('⏳ DashboardRedirect - Cargando...');
+  if (globalThis.__APP_DEBUG__) console.log('⏳ DashboardRedirect - Cargando...');
     return <LoadingScreen />;
   }
 
   if (!isAuthenticated || !user) {
-  if (import.meta.env.DEV) console.log('🚫 DashboardRedirect - No autenticado, redirigiendo a login');
+  if (globalThis.__APP_DEBUG__) console.log('🚫 DashboardRedirect - No autenticado, redirigiendo a login');
     return <Navigate to="/login" replace />;
   }
 
   const userType = user?.tipo_usuario;
-  if (import.meta.env.DEV) console.log(`🎯 DashboardRedirect - Redirigiendo usuario tipo "${userType}"`);
+  if (globalThis.__APP_DEBUG__) console.log(`🎯 DashboardRedirect - Redirigiendo usuario tipo "${userType}"`);
 
   switch (userType) {
     case 'admin':
-  if (import.meta.env.DEV) console.log('👑 Redirigiendo a /admin');
+  if (globalThis.__APP_DEBUG__) console.log('👑 Redirigiendo a /admin');
       return <Navigate to="/admin" replace />;
     case 'revendedor':
-  if (import.meta.env.DEV) console.log('🏢 Redirigiendo a /revendedor');
+  if (globalThis.__APP_DEBUG__) console.log('🏢 Redirigiendo a /revendedor');
       return <Navigate to="/revendedor" replace />;
     case 'trabajador':
-  if (import.meta.env.DEV) console.log('🔧 Redirigiendo a /trabajador');
+  if (globalThis.__APP_DEBUG__) console.log('🔧 Redirigiendo a /trabajador');
       return <Navigate to="/trabajador" replace />;
+    case 'cliente':
+  if (globalThis.__APP_DEBUG__) console.log('🧑‍💼 Redirigiendo a /cliente');
+      return <Navigate to="/cliente" replace />;
+    case 'cliente_servicio':
+  if (globalThis.__APP_DEBUG__) console.log('🧰 Redirigiendo a /clientes-servicio');
+      return <Navigate to="/clientes-servicio" replace />;
     default:
-  if (import.meta.env.DEV) console.log(`❓ Tipo de usuario desconocido: "${userType}", redirigiendo a login`);
+  if (globalThis.__APP_DEBUG__) console.log(`❓ Tipo de usuario desconocido: "${userType}", redirigiendo a login`);
       return <Navigate to="/login" replace />;
   }
 };
@@ -252,6 +256,25 @@ const AppContent = () => {
           element={
             <ProtectedRoute allowedRoles={['admin', 'trabajador']}>
               <TrabajadorWrapper />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Panel estilo vista para Clientes de Servicio (admin/trabajador) */}
+        <Route
+          path="/clientes-servicio"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'trabajador', 'cliente_servicio']}>
+              <ClientesServicioWrapper />
+            </ProtectedRoute>
+          }
+        />
+        
+        <Route
+          path="/cliente/*"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
+              <ClienteWrapper />
             </ProtectedRoute>
           }
         />

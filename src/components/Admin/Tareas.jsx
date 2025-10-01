@@ -1,5 +1,6 @@
 // Tareas.jsx - Sistema de Gestión de Tareas Moderno y Optimizado
 import React, { useState, useEffect, useMemo } from 'react';
+import ImageLightbox from '@components/shared/ImageLightbox';
 import { 
   Plus, 
   Calendar, 
@@ -18,11 +19,15 @@ import {
   Zap,
   RotateCw,
   Trash2,
-  UserX // Icono para trabajadores inactivos
+  UserX, // Icono para trabajadores inactivos
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
-// Asegúrate de que la ruta a tu contexto sea la correcta
-import { useFichas } from '../../context/FichasContext';
+
+import { useFichas } from '@context/FichasContext';
+import { catalogoService } from '@services/catalogoService';
+import { tareasService } from '@services/tareasService';
 
 // Función para truncar texto de forma inteligente
 const truncateText = (text, maxLength = 30) => {
@@ -48,33 +53,87 @@ const FormularioNuevaTarea = ({
   revendedores, 
   trabajadores, 
   prioridades, 
+  clientesServicio = [],
   isMobile = false 
 }) => (
   <div className="space-y-4">
-    {/* Selector de Cliente */}
+    {/* Selección única de destino (Revendedor o Cliente de servicio) */}
     <div className="relative">
-      <select 
-        value={nuevaTarea.revendedorId || ''} 
-        onChange={(e) => setNuevaTarea({...nuevaTarea, revendedorId: e.target.value})} 
-        className="w-full px-3 py-3 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white text-sm appearance-none cursor-pointer hover:border-blue-300 hover:shadow-sm focus:shadow-md overflow-hidden text-ellipsis whitespace-nowrap"
-        style={{ 
-          minHeight: '44px', // Mejorar accesibilidad en móvil
-          backgroundImage: 'none' // Quitar arrow por defecto
-        }}
-        title={nuevaTarea.revendedorId ? (revendedores || []).find(r => r.id == nuevaTarea.revendedorId)?.nombre_negocio || 'Cliente seleccionado' : 'Seleccionar cliente'}
-      >
-        <option value="">🏢 Seleccionar cliente</option>
-        {(revendedores || []).map(r => {
-          const nombre = r.nombre_negocio || r.nombre;
-          return (
-            <option key={r.id} value={r.id} title={nombre}>
-              {isMobile ? truncateText(nombre, 20) : truncateText(nombre, 40)}
-            </option>
-          );
-        })}
-      </select>
+      {(() => {
+        const selectedDestinoValue = nuevaTarea.revendedorId
+          ? `revendedor:${nuevaTarea.revendedorId}`
+          : (nuevaTarea.clienteId ? `cliente:${nuevaTarea.clienteId}` : '');
+        return (
+          <select
+            value={selectedDestinoValue}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (!value) {
+                setNuevaTarea({ ...nuevaTarea, destinoTipo: 'revendedor', revendedorId: '', clienteId: '' });
+                return;
+              }
+              const [tipo, id] = value.split(':');
+              setNuevaTarea({
+                ...nuevaTarea,
+                destinoTipo: tipo,
+                revendedorId: tipo === 'revendedor' ? id : '',
+                clienteId: tipo === 'cliente' ? id : ''
+              });
+            }}
+            className="w-full px-3 py-3 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white text-sm appearance-none cursor-pointer hover:border-blue-300 hover:shadow-sm focus:shadow-md overflow-hidden text-ellipsis whitespace-nowrap"
+            style={{ minHeight: '44px', backgroundImage: 'none' }}
+            title={(() => {
+              if (nuevaTarea.revendedorId) {
+                const r = (revendedores || []).find(r => r.id == nuevaTarea.revendedorId);
+                return r?.responsable || r?.nombre || r?.nombre_negocio || 'Revendedor seleccionado';
+              }
+              if (nuevaTarea.clienteId) {
+                const c = (clientesServicio || []).find(c => c.id == nuevaTarea.clienteId);
+                return c?.nombre_completo || `Cliente #${nuevaTarea.clienteId}`;
+              }
+              return 'Seleccionar destino';
+            })()}
+          >
+            <option value="">📌 Seleccionar destino</option>
+            {/* Grupo Revendedores */}
+            {(revendedores || []).length > 0 && (
+              <optgroup label="🏢 Revendedores">
+                {(revendedores || []).map(r => {
+                  const nombre = r.responsable || r.nombre || r.nombre_negocio;
+                  return (
+                    <option key={`rev-${r.id}`} value={`revendedor:${r.id}`} title={nombre}>
+                      {isMobile ? truncateText(nombre, 20) : truncateText(nombre, 40)}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+            {/* Grupo Clientes de servicio */}
+            <optgroup label="👤 Clientes de servicio">
+              {(clientesServicio || []).length > 0 ? (
+                (clientesServicio || []).map(c => {
+                  const nombre = c.nombre_completo || `Cliente #${c.id}`;
+                  return (
+                    <option key={`cli-${c.id}`} value={`cliente:${c.id}`} title={nombre}>
+                      {isMobile ? truncateText(nombre, 20) : truncateText(nombre, 40)}
+                    </option>
+                  );
+                })
+              ) : (
+                <option value="" disabled>(sin clientes para mostrar)</option>
+              )}
+            </optgroup>
+          </select>
+        );
+      })()}
       <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200" />
     </div>
+
+    {/* Modo Tarea Abierta */}
+    <label className="flex items-center gap-2 text-sm">
+      <input type="checkbox" checked={!!nuevaTarea.esAbierta} onChange={(e)=>setNuevaTarea({ ...nuevaTarea, esAbierta: e.target.checked, trabajadorId: e.target.checked ? '' : nuevaTarea.trabajadorId })} />
+      <span>Crear como tarea abierta (cualquier técnico puede aceptarla)</span>
+    </label>
 
     {/* Selector de Trabajador */}
     <div className="relative">
@@ -86,6 +145,7 @@ const FormularioNuevaTarea = ({
           minHeight: '44px', // Mejorar accesibilidad en móvil
           backgroundImage: 'none' // Quitar arrow por defecto
         }}
+        disabled={!!nuevaTarea.esAbierta}
         title={nuevaTarea.trabajadorId ? (trabajadores || []).find(t => t.id == nuevaTarea.trabajadorId)?.nombre_completo : 'Asignar a técnico'}
       >
         <option value="">👨‍🔧 Asignar a técnico</option>
@@ -159,11 +219,14 @@ const FormularioNuevaTarea = ({
     {/* Botón de asignar */}
     <button 
       onClick={handleAsignarTarea} 
-      disabled={!nuevaTarea.revendedorId || !nuevaTarea.trabajadorId || !nuevaTarea.titulo || !nuevaTarea.descripcion} 
+      disabled={
+        (!nuevaTarea.esAbierta && !nuevaTarea.trabajadorId) || !nuevaTarea.titulo || !nuevaTarea.descripcion ||
+        (((nuevaTarea.destinoTipo || 'revendedor') === 'revendedor') ? !nuevaTarea.revendedorId : !nuevaTarea.clienteId)
+      } 
       className={`w-full bg-slate-900 hover:bg-slate-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white ${isMobile ? 'py-3' : 'py-3'} px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-sm shadow-sm hover:shadow-md`}
     >
       <Plus className="w-5 h-5" />
-      <span>Asignar Tarea</span>
+      <span>{nuevaTarea.esAbierta ? 'Crear Tarea Abierta' : 'Asignar Tarea'}</span>
     </button>
   </div>
 );
@@ -181,31 +244,62 @@ const Tareas = () => {
   } = useFichas();
   
   const [nuevaTarea, setNuevaTarea] = useState({
+  destinoTipo: 'revendedor',
     revendedorId: '',
+  clienteId: '',
     trabajadorId: '',
     titulo: '',
     descripcion: '',
     fechaVencimiento: new Date().toISOString().split('T')[0],
-    prioridad: 'Media'
+    prioridad: 'Media',
+    esAbierta: false
   });
 
   const resetFormulario = () => {
     setNuevaTarea({
+      destinoTipo: 'revendedor',
       revendedorId: '',
+      clienteId: '',
       trabajadorId: '',
       titulo: '',
       descripcion: '',
       fechaVencimiento: new Date().toISOString().split('T')[0],
-      prioridad: 'Media'
+      prioridad: 'Media',
+      esAbierta: false
     });
   };
+
+  // Clientes de servicio para destino
+  const [clientesServicio, setClientesServicio] = useState([]);
+  useEffect(() => {
+    let mounted = true;
+  const cargarClientes = async () => {
+      try {
+  // Usar catálogo unificado para obtener SOLO clientes de servicio activos
+  const res = await catalogoService.listarEntidades({ tipo: 'clientes_servicio', includeInactive: false });
+  const items = Array.isArray(res?.items) ? res.items : [];
+  const activos = items.filter(it => it?.activo === 1 || it?.activo === true);
+  // Mapear a la forma esperada por el selector (id, nombre_completo)
+  const lista = activos.map(it => ({ id: it.id, nombre_completo: it.nombre }));
+    lista.sort((a, b) => (a?.nombre_completo || '').localeCompare(b?.nombre_completo || ''));
+    if (mounted) setClientesServicio(lista);
+      } catch (e) {
+        console.warn('No se pudieron cargar clientes de servicio:', e?.message || e);
+        setClientesServicio([]);
+      }
+    };
+    cargarClientes();
+    return () => { mounted = false; };
+  }, []);
 
   const [modalNotas, setModalNotas] = useState(null);
   const [modalConfirmacion, setModalConfirmacion] = useState(null);
   const [modalReasignacion, setModalReasignacion] = useState(null); // Nuevo modal para reasignar
+  const [lightbox, setLightbox] = useState({ open: false, images: [], index: 0 });
+  const [evidencias, setEvidencias] = useState({ open:false, images:[], index:0, titulo:'' });
   const [notificacion, setNotificacion] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('todos');
-  const [filtroPrioridad, setFiltroPrioridad] = useState('todas');
+  const [filtroTrabajador, setFiltroTrabajador] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [seccionExpandida, setSeccionExpandida] = useState('nueva');
 
@@ -221,19 +315,28 @@ const Tareas = () => {
   }, [notificacion]);
 
   const handleAsignarTarea = async () => {
-    if (!nuevaTarea.revendedorId || !nuevaTarea.trabajadorId || !nuevaTarea.titulo.trim() || !nuevaTarea.descripcion.trim()) {
+    const esRev = (nuevaTarea.destinoTipo || 'revendedor') === 'revendedor';
+    const destinoValido = esRev ? nuevaTarea.revendedorId : nuevaTarea.clienteId;
+    if (
+      !destinoValido ||
+      (!nuevaTarea.esAbierta && !nuevaTarea.trabajadorId) ||
+      !nuevaTarea.titulo.trim() ||
+      !nuevaTarea.descripcion.trim()
+    ) {
       mostrarNotificacion('error', 'Campos incompletos', 'Por favor complete todos los campos requeridos.');
       return;
     }
 
     try {
       const tareaData = {
-        revendedor_id: parseInt(nuevaTarea.revendedorId, 10),
-        trabajador_id: parseInt(nuevaTarea.trabajadorId, 10),
+        revendedor_id: esRev ? parseInt(nuevaTarea.revendedorId, 10) : null,
+        cliente_id: !esRev ? parseInt(nuevaTarea.clienteId, 10) : null,
+        trabajador_id: nuevaTarea.esAbierta ? null : parseInt(nuevaTarea.trabajadorId, 10),
         titulo: nuevaTarea.titulo.trim(),
         descripcion: nuevaTarea.descripcion.trim(),
         prioridad: nuevaTarea.prioridad,
-        fecha_vencimiento: nuevaTarea.fechaVencimiento
+        fecha_vencimiento: nuevaTarea.fechaVencimiento,
+        es_abierta: nuevaTarea.esAbierta ? 1 : 0
       };
       
       const resultado = await crearTarea(tareaData);
@@ -321,25 +424,17 @@ const Tareas = () => {
     }
 
     try {
-      const response = await fetch(`/api/tareas/${modalReasignacion.tarea.id}/reasignar`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          nuevo_trabajador_id: parseInt(modalReasignacion.nuevoTrabajadorId, 10)
-        })
-      });
-
-      const resultado = await response.json();
+      const resultado = await tareasService.reasignarTarea(
+        modalReasignacion.tarea.id,
+        parseInt(modalReasignacion.nuevoTrabajadorId, 10)
+      );
       
       if (resultado.success) {
         mostrarNotificacion('exito', 'Tarea Reasignada', resultado.message);
         setModalReasignacion(null);
         recargarTareas();
       } else {
-        mostrarNotificacion('error', 'Error al reasignar', resultado.message || 'No se pudo reasignar la tarea.');
+        mostrarNotificacion('error', 'Error al reasignar', resultado.error || resultado.message || 'No se pudo reasignar la tarea.');
       }
     } catch (error) {
       console.error('Error al reasignar tarea:', error);
@@ -351,32 +446,26 @@ const Tareas = () => {
   const tareasFiltradas = useMemo(() => {
     const busquedaLower = busqueda.toLowerCase();
 
-    // La API ya nos da casi todo, solo necesitamos encontrar el objeto del revendedor
-    // Filtrar elementos válidos antes de procesar
-    const tareasConRevendedor = (tareasMantenimiento || [])
-      .filter(tarea => tarea && typeof tarea === 'object' && tarea.revendedor_id)
+    // Enriquecer tareas con destino_nombre cuando exista y con objeto revendedor si aplica.
+    const enriquecidas = (tareasMantenimiento || [])
+      .filter(tarea => tarea && typeof tarea === 'object')
       .map(tarea => ({
         ...tarea,
-        revendedor: (revendedores || []).find(r => r.id === tarea.revendedor_id),
+        revendedor: tarea.revendedor_id ? (revendedores || []).find(r => r.id === tarea.revendedor_id) : null,
+        destino_nombre: tarea.destino_nombre || (tarea.revendedor_id ? ((revendedores || []).find(r => r.id === tarea.revendedor_id)?.responsable || (revendedores || []).find(r => r.id === tarea.revendedor_id)?.nombre || (revendedores || []).find(r => r.id === tarea.revendedor_id)?.nombre_negocio) : null)
       }));
 
-    return tareasConRevendedor.filter(tarea => {
-        // Solo ocultamos la tarea si el REVENDEDOR asociado ya no existe.
-        if (!tarea.revendedor) {
-          return false;
-        }
-
-        const cumpleBusqueda = !busqueda || 
-          (tarea.titulo || '').toLowerCase().includes(busquedaLower) ||
-          (tarea.revendedor?.nombre || tarea.revendedor?.nombre_negocio || '').toLowerCase().includes(busquedaLower) ||
-          (tarea.nombre_trabajador || '').toLowerCase().includes(busquedaLower);
-        
-        const cumpleEstado = filtroEstado === 'todos' || (tarea.estado || '').toLowerCase() === filtroEstado;
-        const cumplePrioridad = filtroPrioridad === 'todas' || (tarea.prioridad || '').toLowerCase() === filtroPrioridad;
-
-        return cumpleBusqueda && cumpleEstado && cumplePrioridad;
-      });
-  }, [tareasMantenimiento, revendedores, busqueda, filtroEstado, filtroPrioridad]);
+    return enriquecidas.filter(tarea => {
+      const nombreDestino = tarea.destino_nombre || '';
+      const cumpleBusqueda = !busqueda || 
+        (tarea.titulo || '').toLowerCase().includes(busquedaLower) ||
+        nombreDestino.toLowerCase().includes(busquedaLower) ||
+        (tarea.nombre_trabajador || '').toLowerCase().includes(busquedaLower);
+      const cumpleEstado = filtroEstado === 'todos' || (tarea.estado || '').toLowerCase() === filtroEstado;
+      const cumpleTrab = !filtroTrabajador || String(tarea.trabajador_id) === String(filtroTrabajador);
+      return cumpleBusqueda && cumpleEstado && cumpleTrab;
+    });
+  }, [tareasMantenimiento, revendedores, busqueda, filtroEstado, filtroTrabajador]);
   
   const prioridades = ['Baja', 'Media', 'Alta', 'Urgente'];
   const getPrioridadInfo = (prioridad) => {
@@ -402,7 +491,7 @@ const Tareas = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-8">
+      <div className="w-full px-3 sm:px-4 md:px-5 lg:px-6 py-6 lg:py-8 space-y-8">
         
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4">
@@ -416,14 +505,14 @@ const Tareas = () => {
           </div>
           <button
             onClick={recargarTareas}
-            className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-lg font-medium transition-colors flex items-center justify-center sm:justify-start space-x-2 shadow-sm"
+            className="w-full sm:w-auto px-4 py-2 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-lg font-medium transition-colors flex items-center justify-center sm:justify-start space-x-2 shadow-sm"
           >
             <RotateCw className="w-4 h-4" />
             <span>Actualizar</span>
           </button>
         </header>
 
-        <main className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+  <main className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-7">
           
           <aside className="hidden lg:block lg:col-span-4 xl:col-span-3">
             <div className="sticky top-6 space-y-6">
@@ -444,6 +533,7 @@ const Tareas = () => {
                   revendedores={revendedores}
                   trabajadores={trabajadores}
                   prioridades={prioridades}
+                  clientesServicio={clientesServicio}
                 />
               </div>
             </div>
@@ -465,6 +555,7 @@ const Tareas = () => {
                     revendedores={revendedores}
                     trabajadores={trabajadores}
                     prioridades={prioridades}
+                    clientesServicio={clientesServicio}
                     isMobile={true} 
                   />
                 </div>}
@@ -493,12 +584,14 @@ const Tareas = () => {
                   <option value="completado">Solo completadas</option>
                 </select>
                 <select 
-                  value={filtroPrioridad || 'todas'} 
-                  onChange={(e) => setFiltroPrioridad(e.target.value)} 
+                  value={filtroTrabajador}
+                  onChange={(e) => setFiltroTrabajador(e.target.value)} 
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 hover:bg-white text-sm"
                 >
-                  <option value="todas">Todas las prioridades</option>
-                  {prioridades.map(p => <option key={p} value={p.toLowerCase()}>{p}</option>)}
+                  <option value="">Todos los técnicos</option>
+                  {(trabajadores || []).map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre_completo}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -524,32 +617,63 @@ const Tareas = () => {
                     })
                     .map(tarea => {
                       const { revendedor } = tarea;
-                      const { color, icon: PrioridadIcon } = getPrioridadInfo(tarea.prioridad);                                      const clienteInfo = revendedor.nombre_negocio || revendedor.nombre;
-                                      const trabajadorInfo = tarea.nombre_trabajador || `ID Desconocido: ${tarea.trabajador_id}`;
-                                      const isTrabajadorActivo = !!tarea.trabajador_activo;
+                      const { color, icon: PrioridadIcon } = getPrioridadInfo(tarea.prioridad);
+                                      const clienteInfo = tarea.destino_nombre || (revendedor ? (revendedor.responsable || revendedor.nombre || revendedor.nombre_negocio) : `Destino #${tarea.cliente_id || tarea.revendedor_id || ''}`);
+                                      const esAbierta = !!tarea.es_abierta;
+                                      const sinAsignar = esAbierta && (!tarea.trabajador_id || tarea.trabajador_id === 0);
+                                      const trabajadorInfo = sinAsignar
+                                        ? 'Tarea abierta (sin técnico)'
+                                        : (tarea.nombre_trabajador || `ID Desconocido: ${tarea.trabajador_id}`);
+                                      const isTrabajadorActivo = sinAsignar ? true : !!tarea.trabajador_activo;
                                       
                                       // Verificar si hay otros trabajadores disponibles para reasignación
                                       const trabajadoresDisponibles = trabajadores.filter(t => t.id !== tarea.trabajador_id);
                                       const puedeReasignar = !isTrabajadorActivo && trabajadoresDisponibles.length > 0;
 
                       return (
-                        <div key={tarea.id} className={`border rounded-xl overflow-hidden hover:shadow-md transition-shadow duration-300 ${!isTrabajadorActivo && tarea.estado === 'Pendiente' ? 'border-orange-300 bg-orange-50' : 'border-gray-200'}`}>
-                          <div className={`${!isTrabajadorActivo && tarea.estado === 'Pendiente' ? 'bg-orange-100' : 'bg-gray-50'} px-5 py-4`}>
+                        <div
+                          key={tarea.id}
+                          className={`border rounded-xl overflow-hidden hover:shadow-md transition-shadow duration-300 ${
+                            sinAsignar && tarea.estado === 'Pendiente'
+                              ? 'border-purple-300 bg-purple-50'
+                              : (!isTrabajadorActivo && tarea.estado === 'Pendiente')
+                              ? 'border-orange-300 bg-orange-50'
+                              : 'border-gray-200'
+                          }`}
+                        >
+                          <div
+                            className={`${
+                              sinAsignar && tarea.estado === 'Pendiente'
+                                ? 'bg-purple-100'
+                                : (!isTrabajadorActivo && tarea.estado === 'Pendiente')
+                                ? 'bg-orange-100'
+                                : 'bg-gray-50'
+                            } px-5 py-4`}
+                          >
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <h3 className="text-lg font-semibold text-gray-900 truncate">{tarea.titulo}</h3>
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-600">
                                   <span className="flex items-center gap-1.5"><Building2 className="w-4 h-4" /> {clienteInfo}</span>
                                   
-                                  <span className={`flex items-center gap-1.5 ${!isTrabajadorActivo && tarea.estado === 'Pendiente' ? 'text-orange-800 font-bold' : ''}`}>
-                                    {!isTrabajadorActivo && tarea.estado === 'Pendiente' ? <UserX className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                                    {trabajadorInfo} {!isTrabajadorActivo && tarea.estado === 'Pendiente' && '(Inactivo)'}
+                                  <span className={`flex items-center gap-1.5 ${(!isTrabajadorActivo && tarea.estado === 'Pendiente') ? 'text-orange-800 font-bold' : ''}`}>
+                                    {sinAsignar ? (
+                                      <User className="w-4 h-4" />
+                                    ) : (
+                                      (!isTrabajadorActivo && tarea.estado === 'Pendiente') ? <UserX className="w-4 h-4" /> : <User className="w-4 h-4" />
+                                    )}
+                                    {trabajadorInfo} {(!sinAsignar && !isTrabajadorActivo && tarea.estado === 'Pendiente') && '(Inactivo)'}
                                   </span>
 
                                   <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /> Vence: {new Date(tarea.fecha_vencimiento).toLocaleDateString('es-MX', { timeZone: 'UTC' })}</span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
+                                {esAbierta && (
+                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                                    Abierta
+                                  </span>
+                                )}
                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}><PrioridadIcon className="w-4 h-4 mr-1.5" />{tarea.prioridad}</span>
                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${tarea.estado === 'Completado' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                                   {tarea.estado === 'Completado' ? <CheckCircle className="w-4 h-4 mr-1.5" /> : <Clock className="w-4 h-4 mr-1.5" />} {tarea.estado}
@@ -587,16 +711,28 @@ const Tareas = () => {
                                             )}
                                         </>
                                     ) : (
-                                      tarea.notas && (
-                                        <div className="w-full p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                                      tarea.estado === 'Completado' && (
+                                        <div className="w-full p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-3">
                                           <div className="flex items-start space-x-3">
                                             <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
-                                            <div>
+                                            <div className="flex-1">
                                               <p className="font-semibold text-emerald-800">Tarea completada</p>
-                                              <p className="text-sm text-gray-700 mt-1"><strong>Notas:</strong> {tarea.notas}</p>
+                                              {tarea.notas && <p className="text-sm text-gray-700 mt-1"><strong>Notas:</strong> {tarea.notas}</p>}
                                               <p className="text-xs text-gray-500 mt-2">Finalizada el {new Date(tarea.fecha_completado).toLocaleString('es-MX')}</p>
                                             </div>
                                           </div>
+                                          {Array.isArray(tarea.imagenes) && tarea.imagenes.length > 0 && (
+                                            <div>
+                                              <p className="text-xs font-medium text-emerald-700 mb-2">Evidencias ({tarea.imagenes.length})</p>
+                                              <div className="flex gap-2 flex-wrap">
+                                                {tarea.imagenes.map((img, idx) => (
+                                                  <button key={idx} type="button" onClick={() => setEvidencias({ open:true, images: tarea.imagenes, index: idx, titulo: tarea.titulo })} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-emerald-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                                                    <img src={img} alt={`Evidencia ${idx+1}`} className="object-cover w-full h-full transition-transform duration-200 group-hover:scale-105" loading="lazy" />
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                       )
                                     )}
@@ -654,6 +790,64 @@ const Tareas = () => {
           </div>
         </div>
       )}
+
+      {evidencias.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={()=>setEvidencias({ open:false, images:[], index:0, titulo:'' })} />
+          <div className="relative bg-white w-full max-w-3xl rounded-xl shadow-xl border p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Evidencias ({evidencias.images.length})</h3>
+              <button onClick={()=>setEvidencias({ open:false, images:[], index:0, titulo:'' })} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="relative border rounded-xl overflow-hidden">
+              {evidencias.images.length > 1 && (
+                <button
+                  onClick={()=>setEvidencias(s=>({ ...s, index: (s.index-1+evidencias.images.length)%evidencias.images.length }))}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/10 hover:bg-black/20 text-gray-800 rounded-full w-10 h-10 flex items-center justify-center z-10"
+                  aria-label="Anterior"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              )}
+              <img src={evidencias.images[evidencias.index]} alt="Evidencia" className="w-full max-h-[50vh] object-contain bg-gray-50" />
+              {evidencias.images.length > 1 && (
+                <button
+                  onClick={()=>setEvidencias(s=>({ ...s, index: (s.index+1)%evidencias.images.length }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/10 hover:bg-black/20 text-gray-800 rounded-full w-10 h-10 flex items-center justify-center z-10"
+                  aria-label="Siguiente"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+            {evidencias.images.length > 1 && (
+              <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+                {evidencias.images.map((img,i)=>(
+                  <button key={i} onClick={()=>setEvidencias(s=>({ ...s, index:i }))} className={`w-16 h-16 rounded-md overflow-hidden border ${i===evidencias.index ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200'}`}>
+                    <img src={img} alt={`mini-${i+1}`} className="object-cover w-full h-full" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={()=>{ setLightbox({ open:true, images:evidencias.images, index:evidencias.index, titulo:evidencias.titulo }); setEvidencias(s=>({ ...s, open:false })); }}
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700"
+              >
+                Ver más grande
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ImageLightbox
+        open={lightbox.open}
+        images={lightbox.images}
+        title={lightbox.titulo || ''}
+        initialIndex={lightbox.index || 0}
+        onClose={() => setLightbox({ open:false, images:[], index:0, titulo:'' })}
+      />
 
       {modalConfirmacion && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">

@@ -130,6 +130,23 @@ export const tareasService = {
     }
   },
 
+  // Obtener mis tareas (para clientes de servicio)
+  obtenerMisTareasCliente: async () => {
+    try {
+      const response = await apiClient.get('/tareas/mis-tareas-cliente');
+      return {
+        success: true,
+        tareas: response.data.tareas || []
+      };
+    } catch (error) {
+      console.error('Error al obtener mis tareas como cliente:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al obtener mis tareas'
+      };
+    }
+  },
+
   // Crear nueva tarea
   crearTarea: async (datos) => {
     try {
@@ -149,12 +166,18 @@ export const tareasService = {
   },
 
   // Actualizar estado de tarea
-  actualizarEstadoTarea: async (tareaId, estado, notas = '') => {
+  actualizarEstadoTarea: async (tareaId, estado, notas = '', imagenes = []) => {
     try {
-      const response = await apiClient.put(`/tareas/${tareaId}/estado`, {
-        estado,
-        notas
-      });
+      let response;
+      if (Array.isArray(imagenes) && imagenes.length) {
+        const fd = new FormData();
+        fd.append('estado', estado);
+        fd.append('notas', notas || '');
+        imagenes.forEach(f => fd.append('imagenes[]', f));
+        response = await apiClient.put(`/tareas/${tareaId}/estado`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        response = await apiClient.put(`/tareas/${tareaId}/estado`, { estado, notas });
+      }
       return {
         success: true,
         message: response.data.message
@@ -169,12 +192,18 @@ export const tareasService = {
   },
 
   // Actualizar estado de mi tarea (para trabajadores)
-  actualizarEstadoMiTarea: async (tareaId, estado, notas = '') => {
+  actualizarEstadoMiTarea: async (tareaId, estado, notas = '', imagenes = []) => {
     try {
-      const response = await apiClient.put(`/tareas/mis-tareas/${tareaId}/estado`, {
-        estado,
-        notas
-      });
+      let response;
+      if (Array.isArray(imagenes) && imagenes.length) {
+        const fd = new FormData();
+        fd.append('estado', estado);
+        fd.append('notas', notas || '');
+        imagenes.forEach(f => fd.append('imagenes[]', f));
+        response = await apiClient.put(`/tareas/mis-tareas/${tareaId}/estado`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        response = await apiClient.put(`/tareas/mis-tareas/${tareaId}/estado`, { estado, notas });
+      }
       return {
         success: true,
         message: response.data.message
@@ -185,6 +214,16 @@ export const tareasService = {
         success: false,
         error: error.response?.data?.error || 'Error al actualizar estado de mi tarea'
       };
+    }
+  },
+
+  // Aceptar tarea abierta (para trabajadores)
+  aceptarTareaAbierta: async (tareaId) => {
+    try {
+      const response = await apiClient.put(`/tareas/mis-tareas/${tareaId}/aceptar`);
+      return { success: true, tarea: response.data.tarea, message: response.data.message };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'No se pudo aceptar la tarea' };
     }
   },
 
@@ -201,6 +240,25 @@ export const tareasService = {
       return {
         success: false,
         error: error.response?.data?.error || 'Error al eliminar tarea'
+      };
+    }
+  },
+
+  // Reasignar tarea a otro trabajador (admin)
+  reasignarTarea: async (tareaId, nuevoTrabajadorId) => {
+    try {
+      const response = await apiClient.put(`/tareas/${tareaId}/reasignar`, {
+        nuevo_trabajador_id: nuevoTrabajadorId
+      });
+      return {
+        success: true,
+        message: response.data.message
+      };
+    } catch (error) {
+      console.error('Error al reasignar tarea:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.response?.data?.error || 'Error al reasignar tarea'
       };
     }
   },

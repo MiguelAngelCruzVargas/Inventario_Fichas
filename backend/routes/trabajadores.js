@@ -1,6 +1,6 @@
 // Archivo: routes/trabajadores.js
 import express from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { query } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
 

@@ -17,6 +17,7 @@ router.get('/stats', authenticateToken, requireRole(['admin']), async (req, res)
           r.nombre_negocio,
           r.nombre,
           r.responsable,
+          COALESCE(r.responsable, r.nombre, r.nombre_negocio) AS nombre_mostrar,
           r.telefono,
           r.direccion,
           r.activo,
@@ -61,34 +62,37 @@ router.get('/stats', authenticateToken, requireRole(['admin']), async (req, res)
         ventasQuery
     ] = await Promise.all([
         query(revendedoresQuery),
-        query(`
-            SELECT 
-                e.id, e.revendedor_id as revendedorId, e.tipo_ficha_id, e.cantidad,
-                e.tipo_movimiento, e.nota, DATE_FORMAT(e.created_at, '%Y-%m-%d') as fecha,
-                e.created_at as fecha_completa, r.nombre as revendedor_nombre,
-                tf.nombre as tipoFicha, tf.precio_venta as precio, tf.duracion_horas,
-                u.username as usuario_entrega
-            FROM entregas e
-            JOIN revendedores r ON e.revendedor_id = r.id
-            JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
-            LEFT JOIN usuarios u ON e.created_by = u.id
-            WHERE r.activo = 1 AND tf.activo = 1
-            ORDER BY e.created_at DESC LIMIT 100
-        `),
+    query(`
+      SELECT 
+        e.id, e.revendedor_id as revendedorId, e.tipo_ficha_id, e.cantidad,
+        e.tipo_movimiento, e.nota, DATE_FORMAT(e.created_at, '%Y-%m-%d') as fecha,
+        e.created_at as fecha_completa,
+        COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
+        tf.nombre as tipoFicha, tf.precio_venta as precio, tf.duracion_horas,
+        u.username as usuario_entrega
+      FROM entregas e
+      JOIN revendedores r ON e.revendedor_id = r.id
+      JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+      LEFT JOIN usuarios u ON e.created_by = u.id
+      WHERE r.activo = 1 AND tf.activo = 1
+      ORDER BY e.created_at DESC LIMIT 100
+    `),
         query(`
             SELECT id, nombre, descripcion, duracion_horas, precio_compra, precio_venta, activo
             FROM tipos_fichas WHERE activo = 1 ORDER BY duracion_horas, nombre
         `),
-        query(`
-            SELECT 
-                t.id, t.revendedor_id, t.trabajador_id, t.titulo, t.descripcion, t.prioridad,
-                t.estado, t.fecha_asignacion, t.fecha_vencimiento, t.fecha_completado, t.notas,
-                t.created_at, r.nombre as nombre_revendedor, tm.nombre_completo as nombre_trabajador
-            FROM tareas_mantenimiento t
-            LEFT JOIN revendedores r ON t.revendedor_id = r.id
-            LEFT JOIN trabajadores_mantenimiento tm ON t.trabajador_id = tm.id
-            ORDER BY t.created_at DESC
-        `),
+    query(`
+      SELECT 
+        t.id, t.revendedor_id, t.trabajador_id, t.titulo, t.descripcion, t.prioridad,
+        t.estado, t.fecha_asignacion, t.fecha_vencimiento, t.fecha_completado, t.notas,
+        t.created_at,
+        COALESCE(r.responsable, r.nombre, r.nombre_negocio) as nombre_revendedor,
+        tm.nombre_completo as nombre_trabajador
+      FROM tareas_mantenimiento t
+      LEFT JOIN revendedores r ON t.revendedor_id = r.id
+      LEFT JOIN trabajadores_mantenimiento tm ON t.trabajador_id = tm.id
+      ORDER BY t.created_at DESC
+    `),
         query(`
             SELECT 
                 id, nombre_completo, email, username, activo, especialidad
@@ -99,11 +103,24 @@ router.get('/stats', authenticateToken, requireRole(['admin']), async (req, res)
         query(`
             SELECT 
                 SUM(e.cantidad * tf.precio_venta) as total_vendido,
-                SUM(e.cantidad * tf.precio_venta * 0.20) as total_ganancias,
+                SUM(
+                  e.cantidad * tf.precio_venta * (
+                    COALESCE(r.porcentaje_comision,
+                      (
+                        SELECT CAST(c.valor AS DECIMAL(10,2))
+                        FROM configuraciones c
+                        WHERE c.clave = 'porcentaje_ganancia_creador'
+                        LIMIT 1
+                      ),
+                      20
+                    ) / 100
+                  )
+                ) as total_ganancias,
                 COUNT(*) as total_entregas,
                 SUM(e.cantidad) as total_fichas_vendidas
             FROM entregas e
             JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+            JOIN revendedores r ON e.revendedor_id = r.id
             WHERE DATE(e.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
         `)
     ]);
@@ -181,9 +198,22 @@ router.get('/metrics', authenticateToken, requireRole(['admin']), async (req, re
       query(`
         SELECT 
           COALESCE(SUM(e.cantidad * tf.precio_venta), 0) as ventas_totales,
-          COALESCE(SUM(e.cantidad * tf.precio_venta * 0.20), 0) as ganancias_totales
+          COALESCE(SUM(
+            e.cantidad * tf.precio_venta * (
+              COALESCE(r.porcentaje_comision,
+                (
+                  SELECT CAST(c.valor AS DECIMAL(10,2))
+                  FROM configuraciones c
+                  WHERE c.clave = 'porcentaje_ganancia_creador'
+                  LIMIT 1
+                ),
+                20
+              ) / 100
+            )
+          ), 0) as ganancias_totales
         FROM entregas e
         JOIN tipos_fichas tf ON e.tipo_ficha_id = tf.id
+        JOIN revendedores r ON e.revendedor_id = r.id
         WHERE DATE(e.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
       `)
     ]);

@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../database.js';
 import { authenticateToken, requireRole } from '../auth.js';
+import bus from '../events/bus.js';
 
 const router = express.Router();
 
@@ -22,8 +23,8 @@ router.get('/revendedor/:id', authenticateToken, async (req, res) => {
     }
 
     const inventario = await query(`
-      SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre,
+  SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              sg.cantidad_disponible as stock_global_disponible
       FROM inventarios i
       JOIN tipos_fichas tf ON i.tipo_ficha_id = tf.id
@@ -152,15 +153,19 @@ router.post('/ajustar', authenticateToken, requireRole(['admin', 'trabajador']),
 
     // Obtener el inventario actualizado
     const inventarioActualizado = await query(`
-      SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre
+  SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM inventarios i
       JOIN tipos_fichas tf ON i.tipo_ficha_id = tf.id
       JOIN revendedores r ON i.revendedor_id = r.id
       WHERE i.revendedor_id = ? AND i.tipo_ficha_id = ?
     `, [revendedor_id, tipo_ficha_id]);
 
-    res.json(inventarioActualizado[0]);
+    const updated = inventarioActualizado[0];
+    res.json(updated);
+    try {
+      bus.emit('broadcast', { type: 'inventario-actualizado', payload: updated });
+    } catch {}
 
   } catch (error) {
     console.error('Error al ajustar inventario:', error);
@@ -175,8 +180,8 @@ router.post('/ajustar', authenticateToken, requireRole(['admin', 'trabajador']),
 router.get('/', authenticateToken, requireRole(['admin', 'trabajador']), async (req, res) => {
   try {
     const inventarios = await query(`
-      SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre,
+  SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre,
              sg.cantidad_disponible as stock_global_disponible
       FROM inventarios i
       JOIN tipos_fichas tf ON i.tipo_ficha_id = tf.id
@@ -186,7 +191,8 @@ router.get('/', authenticateToken, requireRole(['admin', 'trabajador']), async (
       ORDER BY r.nombre_negocio, tf.duracion_horas
     `);
 
-    res.json(inventarios);
+  res.json(inventarios);
+  // no broadcast here (read-only)
   } catch (error) {
     console.error('Error al obtener inventarios:', error);
     res.status(500).json({
@@ -248,8 +254,8 @@ router.put('/vendidas-directo', authenticateToken, requireRole(['admin', 'trabaj
 
     // Obtener el inventario actualizado
     const inventarioActualizado = await query(`
-      SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre
+  SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM inventarios i
       JOIN tipos_fichas tf ON i.tipo_ficha_id = tf.id
       JOIN revendedores r ON i.revendedor_id = r.id
@@ -307,8 +313,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'trabajador']), async 
 
     // Obtener el inventario creado
     const nuevoInventario = await query(`
-      SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
-             r.nombre_negocio as revendedor_nombre
+  SELECT i.*, tf.nombre as tipo_ficha_nombre, tf.duracion_horas,
+     COALESCE(r.responsable, r.nombre, r.nombre_negocio) as revendedor_nombre
       FROM inventarios i
       JOIN tipos_fichas tf ON i.tipo_ficha_id = tf.id
       JOIN revendedores r ON i.revendedor_id = r.id
