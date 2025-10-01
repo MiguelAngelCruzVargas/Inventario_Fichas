@@ -22,6 +22,7 @@ const MIN_DIM = parseInt(process.env.NOTE_IMAGE_MIN_DIM || '800', 10);          
 const MAX_IMAGES = parseInt(process.env.NOTE_IMAGES_MAX || '3', 10);              // máximo de imágenes por nota
 
 // Configuración de subida (memoria para poder convertir / comprimir) - versión single y multi
+// Endurecimiento seguridad: validación estricta de mimetypes y límite de tamaño dinámico
 const baseMulterConfig = {
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_INPUT_MB * 1024 * 1024 },
@@ -165,7 +166,7 @@ router.post('/', authenticateToken, requireRole(['trabajador','admin']), uploadM
   } catch (e) {
     console.error('Error creando nota:', e);
     if (e.message === 'Tipo de archivo no permitido') {
-      return res.status(400).json({ error: 'Archivo no permitido', detail: 'Formatos aceptados: jpg, png, webp, heic' });
+      return res.status(400).json({ error: 'Archivo no permitido', detail: 'Formatos aceptados: jpg, jpeg, png, webp, heic, heif' });
     }
     res.status(500).json({ error: 'Error interno', detail: 'No se pudo crear la nota' });
   }
@@ -303,7 +304,7 @@ router.put('/:id', authenticateToken, requireRole(['trabajador','admin']), uploa
   } catch (e) {
     console.error('Error actualizando nota:', e);
     if (e.message === 'Tipo de archivo no permitido') {
-      return res.status(400).json({ error: 'Archivo no permitido', detail: 'Formatos aceptados: jpg, png, webp, heic' });
+      return res.status(400).json({ error: 'Archivo no permitido', detail: 'Formatos aceptados: jpg, jpeg, png, webp, heic, heif' });
     }
     res.status(500).json({ error: 'Error interno', detail: 'No se pudo actualizar la nota' });
   }

@@ -11,7 +11,20 @@ import { compressAdaptive, ensureDir, validateImage } from '../lib/imageUtils.js
 const router = express.Router();
 
 // ===== Configuración de subida de imágenes para tareas =====
-const uploadTareas = multer({ storage: multer.memoryStorage(), limits: { files: 3, fileSize: 15 * 1024 * 1024 } });
+// Endurecimiento: límites derivados de variables de entorno y validación estricta de mimetypes
+const TASK_MAX_INPUT_MB = parseInt(process.env.TASK_IMAGE_MAX_INPUT_MB || process.env.NOTE_IMAGE_MAX_INPUT_MB || '12', 10);
+const TASK_MAX_FILES = parseInt(process.env.TASK_IMAGES_MAX || '3', 10);
+const allowedMimesTask = ['image/jpeg','image/jpg','image/png','image/webp','image/heic','image/heif'];
+const uploadTareas = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: TASK_MAX_FILES, fileSize: TASK_MAX_INPUT_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!allowedMimesTask.includes(file.mimetype)) {
+      return cb(new Error('Tipo de archivo no permitido'));
+    }
+    cb(null, true);
+  }
+});
 const TAREAS_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'tareas');
 ensureDir(TAREAS_UPLOAD_DIR);
 

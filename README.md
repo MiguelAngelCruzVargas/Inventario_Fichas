@@ -1,6 +1,55 @@
 # 🌐 Sistema de Fichas Internet
 
-Sistema completo de gestión de fichas WiFi con backend Node.js/Express y frontend React.
+Sistema completo de gestión de fichas WiFi (clientes, revendedores, trabajadores, gastos, inventario y tareas) con backend **Node.js/Express + MySQL** y frontend **React (Vite)**.
+
+---
+## 📌 Tabla de Contenido
+1. [Resumen Rápido](#-resumen-rápido)
+2. [Características Principales](#-características-principales)
+3. [Requisitos Previos](#-requisitos-previos)
+4. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
+5. [Variables de Entorno](#-configuración-de-entorno)
+6. [Interfaz Visual (Frontend)](#-interfaz-visual-frontend)
+7. [Operaciones Comunes Paso a Paso](#-operaciones-comunes-paso-a-paso)
+8. [Modelo de Soft Delete (Borrado Lógico)](#-modelo-de-soft-delete-borrado-lógico)
+9. [Subida y Compresión de Imágenes](#-notas-de-trabajadores-con-imágenes)
+10. [SSE / Tiempo Real](#-tiempo-real-sse)
+11. [Módulo de Exportación / Archivado (Opcional)](#-módulo-de-archivadoexport-opcional)
+12. [Scripts de Mantenimiento](#-comandos-de-mantenimiento)
+13. [Seguridad](#-cambios-de-seguridad-recientes)
+14. [Despliegue](#-despliegue-en-servicios)
+15. [Solución de Problemas](#-troubleshooting)
+16. [Próximas Mejores (Roadmap)](#-roadmap)
+
+---
+## ⚡ Resumen Rápido
+
+```bash
+git clone <repo>
+cd Inventario_Fichas
+npm run install:all          # Instala frontend + backend
+cd backend && npm run setup:db  # (Solo primera vez) crea tablas y usuarios demo
+cd ..
+npm run dev:full             # Arranca frontend (5173) + backend (3001)
+```
+
+Accede en el navegador: http://localhost:5173
+Ingresa con usuario admin (ver sección Credenciales).
+
+---
+## 🧩 Características Principales
+- Gestión de usuarios (admin, revendedores, trabajadores, clientes)
+- Control de inventario y equipos asociados a clientes
+- Registro de gastos con filtros avanzados
+- Ventas, cortes de caja, abonos revendedores
+- Notas de trabajadores con foto comprimida automática
+- Tareas de mantenimiento con soporte de imágenes
+- Soft delete centralizado (no se pierde historial)
+- SSE (Server-Sent Events) para notificaciones en tiempo real (Fase 1)
+- Módulo de exportación/archivado totalmente deshabilitado por defecto (base instalada)
+- Seguridad: cookies httpOnly, rate limiting, control de orígenes, validaciones básicas
+
+---
 
 ## 🚀 Scripts de NPM (Recomendado para Producción)
 
@@ -172,7 +221,123 @@ Contraseña: Juanpe62& -->
 <!-- Usuario: maria_juana
 Contraseña: CafeMari92* -->
 
-aaah otra cosa si las fotos son muy pesadas (a vecees tiene la maxima claidad que las comprima tambien a un tamaño optimo)
+---
+## 🖥️ Interfaz Visual (Frontend)
+
+Rutas típicas (pueden variar según evolución UI):
+- `/login` → Acceso al sistema
+- `/dashboard` → Resumen métricas (puede usar datos cacheables)
+- `/clientes` → Lista, creación, edición y (soft) desactivación de clientes
+- `/revendedores` → Gestión de revendedores y abonos
+- `/usuarios` → Administración global de cuentas (control roles)
+- `/equipos` → Equipos por cliente / inventario
+- `/inventario` → Inventario global de equipos disponibles
+- `/gastos` → Registro y filtros de gastos (usa parámetros fecha, tipo)
+- `/tareas` → Tareas de mantenimiento (estado abierta/cerrada, imágenes)
+- `/notas` → Notas de trabajadores con fotos
+- `/cortes-caja` → Cortes y arqueos
+- `/ventas` / `/ventas-ocasionales` → Registro de ventas directas
+
+La mayoría de las vistas usan carga diferida: al estar en `/login` no se hacen llamadas pesadas.
+
+---
+## 🛠️ Operaciones Comunes Paso a Paso
+
+### 1. Crear un Cliente
+1. Ir a `/clientes`
+2. Botón "Nuevo" → Completar datos básicos
+3. Guardar → Aparece en la lista (estado activo)
+
+### 2. Asociar Equipo a Cliente
+1. Crear equipo en `/equipos` o desde detalle cliente (si la UI lo soporta)
+2. Seleccionar cliente al crear el equipo
+3. Equipo aparece ahora filtrable por `client_ref`
+
+### 3. Registrar Gasto
+1. Ir a `/gastos`
+2. Click "Agregar gasto"
+3. Seleccionar tipo, monto, fecha
+4. Consultar luego con filtros de fecha/tipo
+
+### 4. Crear Nota con Foto
+1. Ir a `/notas`
+2. Escribir título y descripción
+3. Adjuntar imagen (cualquier formato soportado)
+4. El backend comprimirá y convertirá a JPEG
+
+### 5. Desactivar (Soft Delete) un Usuario/Cliente/Revendedor
+1. Ir a `/usuarios` o la sección específica
+2. Usar acción "Desactivar" → El registro se marca inactivo
+3. Sigue existiendo para historial y relaciones
+
+### 6. Subir Tarea de Mantenimiento con Imagen
+1. Ir a `/tareas`
+2. Crear tarea → marcar abierta/cerrada según avance
+3. Adjuntar imágenes si aplica
+
+### 7. Ver Cambios en Tiempo Real
+1. Mantener abierta una vista con SSE (ej. dashboard)
+2. Al crear o actualizar entidades se emitirán eventos (tipos filtrables internamente)
+
+---
+## 🗑️ Modelo de Soft Delete (Borrado Lógico)
+En vez de eliminar filas críticas, se marca `activo = 0` (o campo similar). Beneficios:
+- Historial de ventas/gastos intacto
+- Integridad referencial simplificada
+- Posible restauración futura (feature pendiente)
+
+Hard delete sólo se permite si no existe historial asociado (casos excepcionales o tablas puente).
+
+---
+## 🔔 Tiempo Real (SSE)
+- Endpoint SSE unificado (gestionado por un `SSEManager` interno)
+- Soporta filtros por tipo de evento (`?types=clientes,gastos` en futuras versiones públicas)
+- Eventos incluyen: `ready`, `ping` y payloads con `id` incremental
+- Uso actual: transparente para el frontend (suscripción interna)
+
+Próximas mejoras planeadas (no aún activas):
+- Replay de últimos N eventos tras reconexión
+- Scope por usuario / aislamiento de flujo privado
+- Integración con Redis para escalar horizontalmente
+
+---
+## 📦 Módulo de Archivado/Export (Opcional)
+Infraestructura incluida pero DESACTIVADA por defecto:
+- Bandera: `ENABLE_DATA_EXPORT=0` (si está ausente se asume desactivado)
+- Requisitos al activarlo: header secreto (`ARCHIVE_OPS_KEY`), rol admin + IP permitida
+- Endpoints (cuando activos): `/api/admin/archive/preview` y `/api/admin/archive/export`
+- Uso actual previsto: exportar subconjunto de tablas a JSON para archivado anual manual
+
+No habilites esto en producción sin controles y pruebas previas.
+
+---
+## 🧪 Troubleshooting
+| Síntoma | Causa posible | Solución |
+|--------|---------------|----------|
+| 401 tras login | Cookie no seteada / dominio túnel inseguro | Verifica SameSite y usar https/ngrok si es remoto |
+| Imágenes no aparecen | Ruta estática no servida | Confirmar `/uploads` configurado y permisos de carpeta |
+| Timeout en túnel | Latencia túnel gratuita | Aumentar timeout Axios (ya adaptado) o usar plan mejor |
+| Cliente "fantasma" | Soft delete no filtrado | Asegurar queries filtran `activo = 1` en frontend |
+| Error DB al iniciar | Falta migración | Ejecutar `cd backend && npm run update:db` |
+| Fotos grandes pesan mucho | Parámetros compresión muy altos | Ajustar variables NOTE_IMAGE_* |
+
+---
+## 🧭 Roadmap (Resumen)
+- [ ] Restaurar entidades soft-deleted (`/restore`)
+- [ ] SSE Fase 2: buffer replay + scope usuario
+- [ ] Caché en endpoints de dashboard
+- [ ] Import inverso de snapshot exportado
+- [ ] Métricas (Prometheus) y logs estructurados
+- [ ] UI para archivado (cuando se active feature)
+
+---
+## 📝 Notas Rápidas
+- Si usas Windows PowerShell, los scripts declarados funcionan igual; evita usar `rm -rf`, usa `Remove-Item -Recurse -Force`.
+- Asegura que MySQL tenga juego de caracteres UTF8MB4.
+- Para exponer tu entorno temporalmente: ngrok ó localtunnel (recordar efectos en SameSite cookie).
+
+---
+aaah otra cosa: las fotos pesadas ya se comprimen automáticamente a un tamaño óptimo siguiendo la lógica de Compresión Adaptativa (ver más abajo).
 
 ## 🧮 Filtros de Gastos
 
@@ -229,6 +394,10 @@ NOTE_IMAGE_TARGET_MAX_KB=600    # Objetivo de peso final aproximado
 NOTE_IMAGE_START_QUALITY=82     # Calidad JPEG inicial
 NOTE_IMAGE_MIN_QUALITY=55       # Calidad mínima
 NOTE_IMAGE_MIN_DIM=800          # Dimensión mínima al reducir
+
+// Para tareas (si deseas valores distintos a las notas; heredan de NOTE_ si no se definen)
+TASK_IMAGE_MAX_INPUT_MB=12      # Límite por archivo tareas
+TASK_IMAGES_MAX=3               # Número máximo de imágenes por actualización
 ```
 
 ### Ejemplo de Respuesta de Nota
@@ -250,3 +419,8 @@ NOTE_IMAGE_MIN_DIM=800          # Dimensión mínima al reducir
 - Intentar tomar la foto enfocada y con suficiente iluminación.
 - Evitar capturas de pantalla innecesarias (pesan más sin aportar valor técnico).
 - Una sola evidencia suele ser suficiente; subir múltiples fotos similares duplica almacenamiento.
+
+### Endurecimiento de Seguridad Reciente
+- Validación estricta de mimetypes permitidos (rechaza otros tipos).
+- Límite de tamaño por archivo configurable vía env.
+- Límite de número de imágenes por tarea / nota.
