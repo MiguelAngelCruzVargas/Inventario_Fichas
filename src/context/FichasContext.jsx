@@ -72,32 +72,75 @@ export const FichasProvider = ({ children }) => {
 
   // Cargar datos iniciales con throttling agresivo (OPTIMIZADO)
   useEffect(() => {
+    // Evitar cualquier actividad si NO está autenticado todavía
+    if (!isAuthenticated || !user) return;
+
+    // Evitar doble carga si ya se cargó algo esencial (tiposFicha) recientemente
+    if (tiposFicha && tiposFicha.length > 0) return;
+
     let timeoutId;
     let mounted = true;
-    
-    if (isAuthenticated && user && mounted) {
-      console.log('🔄 Programando carga inicial de datos...');
-      
-      // Throttling más agresivo: esperar 3 segundos antes de cargar datos
-      timeoutId = setTimeout(() => {
-        if (mounted) {
-          console.log('🚀 Iniciando carga de datos del contexto...');
-          loadAllData();
-        }
-      }, 3000); // Aumentado de 1s a 3s para evitar colisiones
-    }
-    
+
+    // No inundar el login: si el pathname es '/' (login) no arrancar hasta que navegue a ruta protegida
+    try {
+      const path = window.location.pathname;
+      if (path === '/' || path === '/login') {
+        // Escuchar un único cambio de navegación para iniciar cuando entre a un panel
+        const onNav = () => {
+          const newPath = window.location.pathname;
+            if (newPath !== '/' && newPath !== '/login') {
+              window.removeEventListener('popstate', onNav);
+              window.removeEventListener('pushstate', onNav);
+              window.removeEventListener('replacestate', onNav);
+              timeoutId = setTimeout(() => {
+                if (mounted) {
+                  console.log('🚀 Iniciando carga de datos (post-login navegación)...');
+                  loadAllData();
+                }
+              }, 400); // pequeño delay tras la navegación
+            }
+        };
+        window.addEventListener('popstate', onNav);
+        // Monkey patch para detectar pushState/replaceState si no se tenía
+        ['pushState','replaceState'].forEach(fn => {
+          const orig = history[fn];
+          if (!orig.__wrapped) {
+            history[fn] = function(...args){ const r = orig.apply(this,args); window.dispatchEvent(new Event(fn.toLowerCase())); return r; };
+            history[fn].__wrapped = true;
+          }
+        });
+        window.addEventListener('pushstate', onNav);
+        window.addEventListener('replacestate', onNav);
+        return () => {
+          mounted = false;
+          if (timeoutId) clearTimeout(timeoutId);
+          window.removeEventListener('popstate', onNav);
+          window.removeEventListener('pushstate', onNav);
+          window.removeEventListener('replacestate', onNav);
+        };
+      }
+    } catch {}
+
+    // Si ya está en una ruta protegida, programar carga inicial (más corta ahora)
+    timeoutId = setTimeout(() => {
+      if (mounted) {
+        console.log('🚀 Iniciando carga de datos del contexto (ruta protegida detectada)...');
+        loadAllData();
+      }
+    }, 600); // menor delay porque ya está dentro
+
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isAuthenticated, user?.id]); // Solo disparar por autenticación o cambio de usuario, NO por tipo_usuario
+  }, [isAuthenticated, user?.id]);
 
   // Sistema de actualizaciones en tiempo real optimizado (como las grandes empresas)
   useEffect(() => {
-    if (!isAuthenticated || !user || userRole !== 'admin') {
-      return;
-    }
+    if (!isAuthenticated || !user || userRole !== 'admin') return;
+    // No establecer realtime en login sin panel
+    const path = window.location.pathname;
+    if (path === '/' || path === '/login') return;
 
     console.log('� Configurando sistema de tiempo real optimizado...');
 
@@ -169,6 +212,8 @@ export const FichasProvider = ({ children }) => {
   // Reaccionar a cambios del contexto de usuarios (SISTEMA CONSERVADOR)
   useEffect(() => {
     if (isAuthenticated && user && userRole === 'admin' && updateTrigger > 0) {
+      const path = window.location.pathname;
+      if (path === '/' || path === '/login') return; // ignorar mientras esté en login
       console.log('🎯 Cambio detectado en UsersContext - recargando datos');
       
       // Usar delays para evitar saturar la API
@@ -193,7 +238,7 @@ export const FichasProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('📦 Cargando datos esenciales (MODO CONSERVADOR)...', { userRole, forceRefresh });
+  console.log('📦 Cargando datos esenciales (MODO CONSERVADOR)...', { userRole, forceRefresh, path: window.location.pathname });
       
       // PASO 1: SOLO tipos de fichas (lo más esencial)
       const tiposFichaData = await fichasService.obtenerTiposFicha();
